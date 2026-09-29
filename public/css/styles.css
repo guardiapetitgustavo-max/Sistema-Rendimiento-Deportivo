@@ -1270,3 +1270,68 @@ a {
 .heroe .lead {
   text-shadow: 0 2px 24px rgba(7, 11, 24, 0.85);
 }
+
+/* ---------------------------------------------------------------------------
+   Administración: selector de coach, credenciales y tabla de cuentas
+   --------------------------------------------------------------------------- */
+.selector-coach {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 40px;
+  padding: 0 0.35rem 0 0.7rem;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: var(--superficie);
+  color: var(--texto-suave);
+  margin: 0;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.selector-coach select {
+  border: 0;
+  background-color: transparent;
+  box-shadow: none !important;
+  max-width: 190px;
+  font-weight: 600;
+  color: var(--texto);
+}
+
+.selector-coach.filtrando {
+  border-color: var(--primario);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primario) 18%, transparent);
+  color: var(--primario);
+}
+
+@media (max-width: 575.98px) {
+  .selector-coach select { max-width: 110px; }
+}
+
+.credencial {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px dashed var(--borde);
+  border-radius: 12px;
+  background: var(--superficie-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+
+.fila-inactiva td {
+  opacity: 0.55;
+}
+
+.fila-inactiva td:last-child {
+  opacity: 1;
+}
+
+.insignia-coach {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--texto-suave);
+}

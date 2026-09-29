@@ -70,7 +70,7 @@ async function listar(usuarioId, filtros = {}) {
     valores.push(valor);
     return `$${valores.length}`;
   };
-  const condiciones = ['d.usuario_id = $1', 'd.activo', 'e.activa'];
+  const condiciones = ['($1::int IS NULL OR d.usuario_id = $1)', 'd.activo', 'e.activa'];
 
   if (filtros.q) {
     const p = param(filtros.q);
@@ -82,8 +82,8 @@ async function listar(usuarioId, filtros = {}) {
   if (filtros.hasta) condiciones.push(`e.fecha <= ${param(filtros.hasta)}::date`);
 
   const { rows } = await query(
-    `SELECT e.*, d.codigo, d.nombre, d.categoria, d.disciplina
-     FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id
+    `SELECT e.*, d.codigo, d.nombre, d.categoria, d.disciplina, u.nombre AS coach
+     FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id JOIN usuarios u ON u.id = d.usuario_id
      WHERE ${condiciones.join(' AND ')}
      ORDER BY ${ORDENES[filtros.orden] || ORDENES.fecha_desc}
      LIMIT 1000`,
@@ -96,7 +96,7 @@ async function obtener(usuarioId, id) {
   const { rows } = await query(
     `SELECT e.*, d.codigo, d.nombre, d.categoria, d.disciplina
      FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id
-     WHERE e.id = $1 AND d.usuario_id = $2 AND e.activa AND d.activo`,
+     WHERE e.id = $1 AND ($2::int IS NULL OR d.usuario_id = $2) AND e.activa AND d.activo`,
     [id, usuarioId],
   );
   if (!rows.length) throw noEncontrado('Evaluación');

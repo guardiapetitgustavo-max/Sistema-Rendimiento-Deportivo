@@ -13,15 +13,16 @@ const esquema = {
 const { codigo, ...esquemaEdicion } = esquema; // el código no se edita
 
 /**
- * Carga los deportistas activos del coach con sus evaluaciones activas
- * (orden cronológico) y el resumen calculado de cada uno.
- * Es la base de dashboard, alertas, reportes, IA y ML.
+ * Carga los deportistas activos con sus evaluaciones activas (orden cronológico)
+ * y el resumen calculado de cada uno. Es la base de dashboard, alertas, reportes, IA y ML.
+ *
+ * `usuarioId` es el alcance: el id de un coach, o null para todos (solo administrador).
  */
 async function cargarAcademia(usuarioId, { deportistaId = null } = {}) {
   const { rows: deportistas } = await query(
-    `SELECT * FROM deportistas
-     WHERE usuario_id = $1 AND activo AND ($2::int IS NULL OR id = $2)
-     ORDER BY nombre`,
+    `SELECT d.*, u.nombre AS coach FROM deportistas d JOIN usuarios u ON u.id = d.usuario_id
+     WHERE ($1::int IS NULL OR d.usuario_id = $1) AND d.activo AND ($2::int IS NULL OR d.id = $2)
+     ORDER BY d.nombre`,
     [usuarioId, deportistaId],
   );
   if (!deportistas.length) return [];
@@ -61,21 +62,40 @@ async function listar(usuarioId, { q = '', categoria = '', disciplina = '' } = {
   return { datos, categorias: unicos('categoria'), disciplinas: unicos('disciplina') };
 }
 
-/** Deportista activo del coach (protege contra acceso a datos de otro coach). */
+/** Deportista activo dentro del alcance (protege contra acceso a datos de otro coach). */
 async function obtener(usuarioId, id) {
   const { rows } = await query(
-    'SELECT * FROM deportistas WHERE id = $1 AND usuario_id = $2 AND activo',
+    'SELECT * FROM deportistas WHERE id = $1 AND ($2::int IS NULL OR usuario_id = $2) AND activo',
     [id, usuarioId],
   );
   if (!rows.length) throw noEncontrado('Deportista');
   return rows[0];
 }
 
-async function crear(usuarioId, datos) {
+/**
+ * Coach dueño de un deportista. Un coach siempre es el dueño de lo que crea; el
+ * administrador puede indicar `coach_id` (obligatorio si está viendo a todos los coaches).
+ */
+async function coachDestino(usuarioId, datos, actor, { requerido = true } = {}) {
+  const pedido = actor?.rol === 'admin' && datos.coach_id ? Number(datos.coach_id) : null;
+  const coachId = pedido || usuarioId;
+  if (!coachId) {
+    if (!requerido) return null;
+    throw new HttpError(400, 'Elige el coach al que pertenece el deportista');
+  }
+  if (pedido) {
+    const { rows } = await query('SELECT id FROM usuarios WHERE id = $1 AND activo', [pedido]);
+    if (!rows.length) throw new HttpError(400, 'El coach elegido no existe o está desactivado');
+  }
+  return coachId;
+}
+
+async function crear(usuarioId, datos, actor) {
   const d = validar(esquema, datos);
+  const coachId = await coachDestino(usuarioId, datos, actor);
   const { rows: existentes } = await query(
     'SELECT id, activo FROM deportistas WHERE usuario_id = $1 AND codigo = $2',
-    [usuarioId, d.codigo],
+    [coachId, d.codigo],
   );
   if (existentes[0]?.activo) throw new HttpError(409, `Ya existe un deportista con el código "${d.codigo}"`);
 
@@ -92,18 +112,20 @@ async function crear(usuarioId, datos) {
   const { rows } = await query(
     `INSERT INTO deportistas (usuario_id, codigo, nombre, edad, categoria, disciplina)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [usuarioId, d.codigo, d.nombre, d.edad, d.categoria, d.disciplina],
+    [coachId, d.codigo, d.nombre, d.edad, d.categoria, d.disciplina],
   );
   return rows[0];
 }
 
-async function actualizar(usuarioId, id, datos) {
-  await obtener(usuarioId, id);
+async function actualizar(usuarioId, id, datos, actor) {
+  const actual = await obtener(usuarioId, id);
   const d = validar(esquemaEdicion, datos);
+  // Solo el administrador puede pasar un deportista a otro coach
+  const coachId = (await coachDestino(null, datos, actor, { requerido: false })) || actual.usuario_id;
   const { rows } = await query(
-    `UPDATE deportistas SET nombre = $2, edad = $3, categoria = $4, disciplina = $5
+    `UPDATE deportistas SET nombre = $2, edad = $3, categoria = $4, disciplina = $5, usuario_id = $6
      WHERE id = $1 RETURNING *`,
-    [id, d.nombre, d.edad, d.categoria, d.disciplina],
+    [id, d.nombre, d.edad, d.categoria, d.disciplina, coachId],
   );
   return rows[0];
 }

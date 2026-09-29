@@ -282,6 +282,15 @@ export function confirmar(mensaje, { titulo = 'Confirmar', boton = 'Aceptar', pe
   });
 }
 
+/** Ventana informativa con un solo botón (devuelve el elemento para enlazar eventos). */
+export function mostrarInfo({ titulo, cuerpo, boton = 'Entendido' }) {
+  const { elemento } = crearModal(html`
+    <div class="modal-header"><h5 class="modal-title fw-bold">${titulo}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+    <div class="modal-body">${cuerpo}</div>
+    <div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal">${boton}</button></div>`);
+  return elemento;
+}
+
 /** Lista de errores dentro de un formulario. */
 export function pintarErrorFormulario(caja, error) {
   montar(caja, html`<i class="bi bi-exclamation-triangle-fill me-1"></i>${error.message}

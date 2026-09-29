@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { requiereSesion } = require('./middlewares/sesion');
+const { definirAlcance, requiereAdmin } = require('./middlewares/roles');
 const { rutasCrud } = require('./utils/rutas-crud');
 const { query } = require('./db/pool');
 const env = require('./config/env');
@@ -19,9 +20,9 @@ router.get('/salud', async (req, res) => {
 });
 router.use('/auth', require('./modules/auth/auth.routes'));
 
-// Protegidas: todo lo demás exige sesión
-router.use(requiereSesion);
-router.get('/dashboard', async (req, res) => res.json(await dashboard.obtener(req.usuario.id)));
+// Protegidas: todo lo demás exige sesión. req.alcance = coach cuyos datos se ven (null = todos, solo admin)
+router.use(requiereSesion, definirAlcance);
+router.get('/dashboard', async (req, res) => res.json(await dashboard.obtener(req.alcance)));
 router.use('/deportistas', require('./modules/deportistas/deportistas.routes'));
 router.use('/evaluaciones', rutasCrud(evaluaciones));
 router.use('/alimentacion', rutasCrud(alimentacion));
@@ -30,5 +31,6 @@ router.use('/ml', require('./modules/ml/ml.routes'));
 router.use('/ia', require('./modules/ia/ia.routes'));
 router.use('/reportes', require('./modules/reportes/reportes.routes'));
 router.use('/cuenta', require('./modules/cuenta/cuenta.routes'));
+router.use('/admin', requiereAdmin, require('./modules/admin/admin.routes'));
 
 module.exports = router;

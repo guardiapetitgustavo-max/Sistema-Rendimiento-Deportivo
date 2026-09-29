@@ -54,12 +54,16 @@ function datasetDemo(cantidad = 150, semilla = 42) {
   return { X, y };
 }
 
-async function cargarModelo(usuarioId) {
-  const { rows } = await query('SELECT modelo, info FROM modelos_ml WHERE usuario_id = $1', [usuarioId]);
+/**
+ * Los modelos se guardan por "clave": el id del coach, o el del administrador cuando
+ * entrena con los datos de todos los coaches (alcance null).
+ */
+async function cargarModelo(clave) {
+  const { rows } = await query('SELECT modelo, info FROM modelos_ml WHERE usuario_id = $1', [clave]);
   return rows[0] || null;
 }
 
-async function entrenar(usuarioId, { usarDemo = false } = {}) {
+async function entrenar(usuarioId, { usarDemo = false, clave = usuarioId } = {}) {
   const academia = await deportistas.cargarAcademia(usuarioId);
   const real = datasetReal(academia);
   let { X, y } = real;
@@ -101,14 +105,14 @@ async function entrenar(usuarioId, { usarDemo = false } = {}) {
   await query(
     `INSERT INTO modelos_ml (usuario_id, modelo, info, entrenado_en) VALUES ($1, $2, $3, now())
      ON CONFLICT (usuario_id) DO UPDATE SET modelo = EXCLUDED.modelo, info = EXCLUDED.info, entrenado_en = now()`,
-    [usuarioId, JSON.stringify(modelo), JSON.stringify(info)],
+    [clave, JSON.stringify(modelo), JSON.stringify(info)],
   );
   return info;
 }
 
 /** Genera una predicción por deportista usando su última evaluación completa. */
-async function predecirTodos(usuarioId) {
-  const guardado = await cargarModelo(usuarioId);
+async function predecirTodos(usuarioId, { clave = usuarioId } = {}) {
+  const guardado = await cargarModelo(clave);
   if (!guardado) throw new HttpError(400, 'Primero debes entrenar el modelo de Machine Learning.');
   const { modelo, info } = guardado;
 
@@ -161,7 +165,7 @@ async function ultimasPredicciones(usuarioId, { deportistaId = null, limite = 50
     `SELECT * FROM (
        SELECT DISTINCT ON (p.deportista_id) p.*, d.codigo, d.nombre, d.categoria
        FROM predicciones p JOIN deportistas d ON d.id = p.deportista_id
-       WHERE d.usuario_id = $1 AND d.activo AND ($2::int IS NULL OR d.id = $2)
+       WHERE ($1::int IS NULL OR d.usuario_id = $1) AND d.activo AND ($2::int IS NULL OR d.id = $2)
        ORDER BY p.deportista_id, p.fecha DESC, p.id DESC
      ) ultimas ORDER BY fecha DESC LIMIT $3`,
     [usuarioId, deportistaId, limite],
@@ -169,9 +173,9 @@ async function ultimasPredicciones(usuarioId, { deportistaId = null, limite = 50
   return rows;
 }
 
-async function estado(usuarioId) {
+async function estado(usuarioId, { clave = usuarioId } = {}) {
   const [guardado, academia, predicciones] = await Promise.all([
-    query('SELECT info FROM modelos_ml WHERE usuario_id = $1', [usuarioId]),
+    query('SELECT info FROM modelos_ml WHERE usuario_id = $1', [clave]),
     deportistas.cargarAcademia(usuarioId),
     ultimasPredicciones(usuarioId, { limite: 20 }),
   ]);

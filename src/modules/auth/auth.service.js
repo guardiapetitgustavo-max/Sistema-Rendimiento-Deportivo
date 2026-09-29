@@ -6,39 +6,19 @@ const { validar } = require('../../utils/validar');
 const MAX_INTENTOS = 5;
 const VENTANA_MINUTOS = 5;
 
-const esquemaRegistro = {
-  nombre: { tipo: 'texto', etiqueta: 'Nombre', requerido: true, maxLargo: 120 },
-  correo: { tipo: 'correo', etiqueta: 'Correo', requerido: true },
-  password: { tipo: 'texto', etiqueta: 'Contraseña', requerido: true, maxLargo: 200 },
-};
-
 const esquemaLogin = {
   correo: { tipo: 'correo', etiqueta: 'Correo', requerido: true },
   password: { tipo: 'texto', etiqueta: 'Contraseña', requerido: true },
 };
 
+// Las cuentas no se registran solas: las crea un administrador (módulo admin).
+
 // Hash de relleno: se compara aunque el correo no exista para no revelar qué cuentas existen
 const HASH_RELLENO = bcrypt.hashSync('relleno-para-tiempo-constante', 10);
 
-const publico = ({ id, nombre, correo, rol }) => ({ id, nombre, correo, rol });
-
-async function registrar(datos) {
-  const { nombre, correo, password } = validar(esquemaRegistro, datos);
-  if (password.length < 6) throw new HttpError(400, 'La contraseña debe tener al menos 6 caracteres');
-  if (datos.confirmar !== undefined && datos.confirmar !== password) {
-    throw new HttpError(400, 'Las contraseñas no coinciden');
-  }
-
-  const hash = await bcrypt.hash(password, 10);
-  const { rows } = await query(
-    `INSERT INTO usuarios (nombre, correo, password_hash) VALUES ($1, $2, $3)
-     ON CONFLICT (correo) DO NOTHING
-     RETURNING id, nombre, correo, rol`,
-    [nombre, correo, hash],
-  );
-  if (!rows.length) throw new HttpError(409, 'Ya existe una cuenta con ese correo');
-  return publico(rows[0]);
-}
+const publico = ({ id, nombre, correo, rol, debe_cambiar_clave: debeCambiarClave }) => ({
+  id, nombre, correo, rol, debe_cambiar_clave: Boolean(debeCambiarClave),
+});
 
 /** Bloquea una combinación IP + correo tras varios intentos fallidos (anti fuerza bruta). */
 async function estaBloqueado(clave) {
@@ -80,7 +60,10 @@ async function autenticar(datos, ip) {
   }
 
   await query('DELETE FROM intentos_login WHERE clave = $1', [clave]);
+  // Se comprueba después de la contraseña para no revelar qué cuentas existen
+  if (!usuario.activo) throw new HttpError(403, 'Tu cuenta está desactivada. Contacta al administrador.');
+  await query('UPDATE usuarios SET ultimo_acceso = now() WHERE id = $1', [usuario.id]);
   return publico(usuario);
 }
 
-module.exports = { registrar, autenticar };
+module.exports = { autenticar, publico };

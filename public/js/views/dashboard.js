@@ -4,6 +4,7 @@ import { html, montar, fecha, insigniaPuntaje, vacio } from '../ui.js';
 import { lineas, barras, dona } from '../graficos.js';
 import { COLOR_POR_NIVEL, PALETA_CAPACIDADES } from '../constantes.js';
 import { actualizarAlertas } from '../navegacion.js';
+import { esAdmin, coachElegido, nombreCoach } from '../sesion.js';
 
 export const tarjetaDato = (icono, color, valor, etiqueta, clases = 'col-6 col-xl-3') => html`
   <div class="${clases}">
@@ -40,6 +41,8 @@ export async function render(vista, { usuario }) {
       <div class="position-relative" style="z-index:1">
         <p class="mb-1 text-white-50 small fw-semibold text-uppercase" style="letter-spacing:.08em">${new Date().toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
         <h2 class="h3 fw-bold mb-2">${saludo()}, ${nombreCorto}</h2>
+        ${esAdmin() ? html`<span class="badge text-bg-warning mb-2"><i class="bi bi-shield-lock me-1"></i>Administrador ·
+          ${coachElegido() ? `viendo a ${nombreCoach(coachElegido()) || 'un coach'}` : 'viendo a todos los coaches'}</span>` : ''}
         <p class="mb-3 text-white-50">${alertas.length
     ? `Tienes ${alertas.length} alerta(s) de rendimiento por revisar.`
     : totales.deportistas ? 'Todo en orden: no hay alertas de rendimiento.' : 'Empieza cargando a tus deportistas.'}</p>
@@ -47,6 +50,7 @@ export async function render(vista, { usuario }) {
           <a class="btn btn-light fw-semibold" href="#/evaluaciones/nueva"><i class="bi bi-clipboard-plus me-1"></i>Nueva evaluación</a>
           <a class="btn btn-outline-light" href="#/importar"><i class="bi bi-cloud-arrow-up me-1"></i>Importar Excel</a>
           <a class="btn btn-outline-light" href="#/ia"><i class="bi bi-stars me-1"></i>Asistente IA</a>
+          ${esAdmin() ? html`<a class="btn btn-outline-light" href="#/admin"><i class="bi bi-shield-lock me-1"></i>Coaches y accesos</a>` : ''}
         </div>
       </div>
     </div>

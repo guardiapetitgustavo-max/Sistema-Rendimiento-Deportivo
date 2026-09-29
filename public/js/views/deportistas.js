@@ -5,8 +5,21 @@ import {
   modalFormulario, datosFormulario, tablaPaginada, iniciales,
 } from '../ui.js';
 import { ir, recargarVista } from '../navegacion.js';
+import { esAdmin, coachElegido, listaCoaches } from '../sesion.js';
 
 const texto = (valor) => valor ?? '';
+
+/** Administrador: elige (o cambia) el coach dueño del deportista. */
+function campoCoach(deportista) {
+  if (!esAdmin()) return '';
+  const actual = deportista?.usuario_id ?? coachElegido() ?? '';
+  const lista = listaCoaches().map((c) => ({ valor: c.id, texto: `${c.nombre}${c.rol === 'admin' ? ' (admin)' : ''}` }));
+  return html`<div class="col-12">
+    <label class="form-label small fw-semibold">Coach responsable *</label>
+    <select class="form-select" name="coach_id" required>${opciones(lista, actual, { vacia: 'Selecciona un coach' })}</select>
+    ${deportista ? html`<div class="form-text">Si eliges otro coach, el deportista pasa a él con todo su historial.</div>` : ''}
+  </div>`;
+}
 
 /** Modal de alta/edición de deportista (se reutiliza desde el perfil). */
 export function abrirFormularioDeportista(deportista = null, alGuardar) {
@@ -35,6 +48,7 @@ export function abrirFormularioDeportista(deportista = null, alGuardar) {
           <label class="form-label small fw-semibold">Disciplina</label>
           <input class="form-control" name="disciplina" value="${texto(deportista?.disciplina)}" placeholder="Fútbol, Vóley, Karate…">
         </div>
+        ${campoCoach(deportista)}
       </div>`,
     alGuardar: async (datos) => {
       const guardado = editando
@@ -69,6 +83,7 @@ export async function render(vista, { query }) {
   const { datos, categorias, disciplinas } = await api.get(`/deportistas${consulta(filtros)}`);
   const recargar = recargarVista;
   const lista = (valores) => valores.map((v) => ({ valor: v, texto: v }));
+  const verCoach = esAdmin() && !coachElegido(); // el admin ve a todos: se indica de quién es cada uno
 
   montar(vista, html`
     ${encabezado('people', 'Deportistas', 'Registra deportistas y consulta su perfil de rendimiento', html`
@@ -93,7 +108,7 @@ export async function render(vista, { query }) {
     <div class="card"><div class="card-header small text-muted fw-normal">${datos.length} deportista(s)</div>
       <div class="table-responsive"><table class="table table-hover align-middle" data-tabla>
         <thead class="table-light"><tr>
-          <th>Deportista</th><th>Edad</th><th>Categoría</th><th>Disciplina</th>
+          <th>Deportista</th>${verCoach ? html`<th>Coach</th>` : ''}<th>Edad</th><th>Categoría</th><th>Disciplina</th>
           <th class="text-center">Evaluaciones</th><th class="text-center">Promedio</th><th>Nivel</th><th class="text-end">Acciones</th>
         </tr></thead>
         <tbody></tbody>
@@ -110,6 +125,7 @@ export async function render(vista, { query }) {
     <tr class="fila-enlace" data-ir="/deportistas/${d.id}">
       <td><div class="d-flex align-items-center gap-2"><span class="avatar" style="width:34px;height:34px;font-size:.75rem">${iniciales(d.nombre)}</span>
         <div><div class="fw-semibold">${d.nombre}</div><div class="small text-muted">${d.codigo}</div></div></div></td>
+      ${verCoach ? html`<td><span class="insignia-coach"><i class="bi bi-person-badge"></i>${d.coach}</span></td>` : ''}
       <td>${d.edad ?? '—'}</td><td>${d.categoria || '—'}</td><td>${d.disciplina || '—'}</td>
       <td class="text-center">${d.total_evaluaciones}</td>
       <td class="text-center">${insigniaPuntaje(d.promedio_general)}</td>
@@ -119,7 +135,7 @@ export async function render(vista, { query }) {
         <button class="btn btn-sm btn-light" data-accion="editar" data-id="${d.id}" title="Editar" aria-label="Editar"><i class="bi bi-pencil"></i></button>
         <button class="btn btn-sm btn-light text-danger" data-accion="baja" data-id="${d.id}" title="Dar de baja" aria-label="Dar de baja"><i class="bi bi-person-dash"></i></button>
       </td>
-    </tr>`, { columnas: 8, mensajeVacio: filtros.q || filtros.categoria || filtros.disciplina ? 'No hay deportistas que coincidan con los filtros' : 'Aún no tienes deportistas. Registra el primero o importa un Excel.', icono: 'people' });
+    </tr>`, { columnas: verCoach ? 9 : 8, mensajeVacio: filtros.q || filtros.categoria || filtros.disciplina ? 'No hay deportistas que coincidan con los filtros' : 'Aún no tienes deportistas. Registra el primero o importa un Excel.', icono: 'people' });
 
   // Un solo listener para todos los botones (sigue funcionando al cambiar de página)
   vista.addEventListener('click', (e) => {

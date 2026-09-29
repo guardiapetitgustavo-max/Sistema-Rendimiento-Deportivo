@@ -2,6 +2,7 @@
 import { api } from '../api.js';
 import { html, montar, encabezado, vacio, avisar, mostrarError, conCarga } from '../ui.js';
 import { ir } from '../navegacion.js';
+import { esAdmin, coachElegido, nombreCoach } from '../sesion.js';
 
 const TAMANO_MAXIMO = 4 * 1024 * 1024;
 
@@ -67,8 +68,21 @@ function vistaPrevia(contenedor, resultado) {
 }
 
 export function render(vista) {
+  // Los deportistas importados pertenecen a un coach: el administrador debe elegir cuál
+  if (esAdmin() && !coachElegido()) {
+    montar(vista, html`
+      ${encabezado('cloud-arrow-up', 'Importar Excel', 'Carga evaluaciones de varios deportistas de una sola vez')}
+      <div class="card"><div class="card-body text-center py-5">
+        <div class="estado-vacio pb-2"><div class="icono"><i class="bi bi-person-badge"></i></div></div>
+        <h3 class="h5 fw-bold">Elige primero un coach</h3>
+        <p class="text-muted mb-0">Los deportistas del Excel se asignarán al coach que elijas en el selector de la barra superior.</p>
+      </div></div>`);
+    return;
+  }
   montar(vista, html`
-    ${encabezado('cloud-arrow-up', 'Importar Excel', 'Carga evaluaciones de varios deportistas de una sola vez', html`
+    ${encabezado('cloud-arrow-up', 'Importar Excel', esAdmin()
+    ? `Los deportistas se asignarán a ${nombreCoach(coachElegido()) || 'el coach elegido'}`
+    : 'Carga evaluaciones de varios deportistas de una sola vez', html`
       <button class="btn btn-outline-success" data-plantilla><i class="bi bi-download me-1"></i>Descargar plantilla</button>`)}
     <div class="row g-3 mb-3">
       <div class="col-lg-6"><div class="card h-100">

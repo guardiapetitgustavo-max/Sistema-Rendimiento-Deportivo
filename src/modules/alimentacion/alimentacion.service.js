@@ -23,7 +23,7 @@ async function listar(usuarioId, { deportista_id: deportistaId } = {}) {
   const { rows } = await query(
     `SELECT a.*, d.codigo, d.nombre
      FROM alimentacion a JOIN deportistas d ON d.id = a.deportista_id
-     WHERE d.usuario_id = $1 AND d.activo AND a.activo AND ($2::int IS NULL OR a.deportista_id = $2)
+     WHERE ($1::int IS NULL OR d.usuario_id = $1) AND d.activo AND a.activo AND ($2::int IS NULL OR a.deportista_id = $2)
      ORDER BY a.fecha DESC, a.id DESC
      LIMIT 1000`,
     [usuarioId, deportistaId ? Number(deportistaId) : null],
@@ -49,7 +49,7 @@ async function obtener(usuarioId, id) {
   const { rows } = await query(
     `SELECT a.*, d.codigo, d.nombre
      FROM alimentacion a JOIN deportistas d ON d.id = a.deportista_id
-     WHERE a.id = $1 AND d.usuario_id = $2 AND a.activo AND d.activo`,
+     WHERE a.id = $1 AND ($2::int IS NULL OR d.usuario_id = $2) AND a.activo AND d.activo`,
     [id, usuarioId],
   );
   if (!rows.length) throw noEncontrado('Registro de alimentación');

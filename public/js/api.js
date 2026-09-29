@@ -4,6 +4,8 @@
  * - Reintentos automáticos de lecturas ante cortes de red o servidor ocupado.
  * - Mensajes claros para cada tipo de error y cabecera anti-CSRF.
  */
+import { coachElegido } from './sesion.js';
+
 export class ErrorApi extends Error {
   constructor(status, mensaje, detalles = [], referencia = null) {
     super(mensaje);
@@ -34,6 +36,8 @@ async function unaVez(metodo, ruta, cuerpo) {
     credentials: 'same-origin',
     signal: control.signal,
   };
+  // Administrador: la API trabaja con los datos del coach elegido en la barra superior
+  if (coachElegido()) opciones.headers['X-Coach'] = String(coachElegido());
   if (cuerpo instanceof FormData) {
     opciones.body = cuerpo;
   } else if (cuerpo !== undefined) {

@@ -15,7 +15,8 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 | Módulo | Qué hace |
 |---|---|
 | Portada | Página de presentación del producto con escena 3D (se adapta si el equipo no soporta 3D). |
-| Cuentas | Registro, inicio de sesión, cambio de nombre y contraseña. Cada coach ve **solo sus** deportistas. |
+| Roles | **Administrador:** crea las cuentas de los coaches (no hay registro público), las edita, desactiva, restablece contraseñas, mueve deportistas entre coaches y ve / edita **todos** los datos. **Coach:** ve y gestiona **solo sus** deportistas y cambia su nombre y contraseña. |
+| Coaches y accesos | Panel del administrador con la actividad de cada coach y un selector en la barra superior para trabajar con los datos de uno o de todos. |
 | Deportistas | Alta, edición y baja lógica (el historial nunca se pierde; se reactiva si vuelve). |
 | Evaluaciones | 8 capacidades (0-100). La puntuación general se calcula sola si se deja vacía. |
 | Importar Excel | Sube un `.xlsx`, revisa la vista previa con errores por fila/columna y confirma. |
@@ -26,7 +27,7 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 | Rutinas | Rutina semanal según el deporte o su familia de deportes, con refuerzo de debilidades. PDF descargable. |
 | Alimentación | Comidas, hidratación y horas de sueño por día. |
 | Reportes | General, ranking, evolución, seguimiento, estadísticas e individual en Excel y PDF. |
-| Mi cuenta | Datos personales, contraseña, tema, respaldo JSON y reinicio de datos. |
+| Mi cuenta | Datos personales, contraseña, tema y respaldo JSON. El reinicio de datos es solo para el administrador. |
 
 ---
 
@@ -46,6 +47,7 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 │       ├── graficos.js       # Gráficos (Chart.js) adaptados al tema
 │       └── views/            # Una vista por pantalla
 ├── sql/schema.sql            # Base de datos completa para pegar en Supabase
+├── sql/crear_admin.sql       # Crea (o recupera) la cuenta de administrador
 ├── src/
 │   ├── app.js                # Aplicación Express
 │   ├── server.js             # Servidor local (npm run dev)
@@ -53,9 +55,9 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 │   ├── config/env.js         # Variables de entorno
 │   ├── db/pool.js            # Conexión a PostgreSQL
 │   ├── domain/rendimiento.js # Reglas de negocio (niveles, umbrales, promedios)
-│   ├── middlewares/          # Sesión, seguridad y errores
+│   ├── middlewares/          # Sesión, roles (admin/coach), seguridad y errores
 │   ├── utils/                # Validación, fechas, descargas, rutas CRUD
-│   └── modules/              # auth, deportistas, evaluaciones, alimentacion, importacion,
+│   └── modules/              # auth, admin, deportistas, evaluaciones, alimentacion, importacion,
 │                             # ml, ia, rutinas, alertas, dashboard, reportes, cuenta
 ├── tests/                    # Pruebas unitarias y de integración (node:test)
 ├── .github/workflows/ci.yml  # Verificación automática en GitHub
@@ -69,7 +71,9 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 
 1. Entra a [supabase.com](https://supabase.com) → **New project** (guarda la contraseña de la base de datos).
 2. Ve a **SQL Editor → New query**, pega **todo** el contenido de [`sql/schema.sql`](sql/schema.sql) y pulsa **Run**.
-3. Ve a **Connect** (arriba) → **Connection string** → **Transaction pooler** y copia la URL
+3. Abre otra **New query**, pega [`sql/crear_admin.sql`](sql/crear_admin.sql), cambia el correo y la contraseña
+   del administrador y pulsa **Run**. No hay registro público: con esa cuenta crearás las de los coaches.
+4. Ve a **Connect** (arriba) → **Connection string** → **Transaction pooler** y copia la URL
    (termina en `:6543/postgres`). Reemplaza `[YOUR-PASSWORD]` por tu contraseña.
 
 ## 2. Configurar Vercel
@@ -118,6 +122,19 @@ Descarga la plantilla desde **Importar Excel → Descargar plantilla**.
 
 ---
 
+## Roles y cuentas
+
+- **No hay registro público.** El administrador crea cada cuenta en **Coaches y accesos → Nueva cuenta**; el sistema
+  genera una contraseña temporal (o usa la que escribas) y la muestra **una sola vez** para entregársela al coach.
+- Al entrar por primera vez, el coach **debe cambiar** esa contraseña. Luego puede cambiar su nombre y su contraseña
+  cuando quiera; el correo y el rol solo los cambia el administrador.
+- El administrador usa el **selector de coach** de la barra superior: "Todos los coaches" para ver la academia completa,
+  o un coach concreto para trabajar con sus datos (importar Excel, entrenar su modelo, reiniciar sus datos).
+- Desactivar una cuenta cierra su sesión al instante y conserva todos sus datos. Para eliminar una cuenta primero hay que
+  transferir sus deportistas a otro coach.
+- Los cambios de rol, nombre o estado se aplican al instante, sin volver a iniciar sesión.
+- ¿Olvidaste la contraseña del administrador? Ejecuta de nuevo `sql/crear_admin.sql` con una contraseña nueva.
+
 ## Reglas del sistema
 
 - **Nivel:** ≥ 75 Alto · 50–74 Medio · < 50 Bajo.
@@ -151,7 +168,8 @@ y si el equipo no soporta 3D o prefiere menos movimiento, la interfaz se adapta 
 ## Seguridad
 
 Contraseñas con bcrypt · sesión en cookie `HttpOnly` + `SameSite` (y `Secure` en producción) ·
-protección CSRF por cabecera · bloqueo tras 5 intentos fallidos de login · cada coach solo accede a sus datos ·
+protección CSRF por cabecera · bloqueo tras 5 intentos fallidos de login · cuentas creadas solo por el administrador ·
+contraseña temporal obligatoria de cambiar · cada coach solo accede a sus datos · sesión validada contra la base en cada petición ·
 consultas SQL parametrizadas · HTML escapado en el frontend · CSP · RLS activado en Supabase.
 
 > Las predicciones y recomendaciones son herramientas de apoyo al entrenador, no diagnósticos médicos.

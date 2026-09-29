@@ -9,6 +9,9 @@ import {
 import { destruirGraficos } from './graficos.js';
 import { ir } from './navegacion.js';
 import { alternarTema, temaActual } from './tema.js';
+import {
+  fijarUsuario, esAdmin, coachElegido, elegirCoach, fijarCoaches, listaCoaches,
+} from './sesion.js';
 import * as portada from './views/portada.js';
 import * as acceso from './views/acceso.js';
 import * as dashboard from './views/dashboard.js';
@@ -22,6 +25,7 @@ import * as ml from './views/ml.js';
 import * as ia from './views/ia.js';
 import * as reportes from './views/reportes.js';
 import * as cuenta from './views/cuenta.js';
+import * as admin from './views/admin.js';
 
 const MENU = [
   { titulo: 'General' },
@@ -36,12 +40,13 @@ const MENU = [
   { ruta: '/alimentacion', icono: 'cup-hot', texto: 'Alimentación' },
   { ruta: '/reportes', icono: 'bar-chart-line', texto: 'Reportes' },
   { ruta: '/cuenta', icono: 'person-gear', texto: 'Mi cuenta' },
+  { titulo: 'Administración', soloAdmin: true },
+  { ruta: '/admin', icono: 'shield-lock', texto: 'Coaches y accesos', soloAdmin: true },
 ];
 
 const RUTAS = [
   { patron: /^\/$/, vista: portada.render, publica: true },
   { patron: /^\/login$/, vista: acceso.login, publica: true },
-  { patron: /^\/registro$/, vista: acceso.registro, publica: true },
   { patron: /^\/dashboard$/, vista: dashboard.render },
   { patron: /^\/deportistas$/, vista: deportistas.render },
   { patron: /^\/deportistas\/(\d+)$/, vista: perfil.render },
@@ -55,6 +60,7 @@ const RUTAS = [
   { patron: /^\/ia$/, vista: ia.render },
   { patron: /^\/reportes$/, vista: reportes.render },
   { patron: /^\/cuenta$/, vista: cuenta.render },
+  { patron: /^\/admin$/, vista: admin.render, soloAdmin: true },
 ];
 
 const app = document.getElementById('app');
@@ -75,12 +81,14 @@ function montarEstructura() {
           <span>SportEval AI<small>Rendimiento deportivo</small></span>
         </a>
         <nav class="menu-enlaces">
-          ${MENU.map((m) => (m.titulo ? html`<div class="menu-titulo">${m.titulo}</div>` : html`
+          ${MENU.filter((m) => !m.soloAdmin || esAdmin()).map((m) => (m.titulo ? html`<div class="menu-titulo">${m.titulo}</div>` : html`
             <a href="#${m.ruta}" data-ruta="${m.ruta}"><i class="bi bi-${m.icono}"></i><span>${m.texto}</span>
               ${m.ruta === '/dashboard' ? html`<span class="badge text-bg-danger ms-auto d-none" id="insignia-alertas"></span>` : ''}
             </a>`))}
         </nav>
-        <div class="menu-pie"><i class="bi bi-shield-check me-1 text-success"></i>Tus datos están protegidos y solo tú los ves.</div>
+        <div class="menu-pie">${esAdmin()
+    ? html`<i class="bi bi-shield-lock me-1 text-warning"></i>Modo administrador: ves y editas los datos de todos los coaches.`
+    : html`<i class="bi bi-shield-check me-1 text-success"></i>Tus datos están protegidos y solo tú y el administrador los ven.`}</div>
       </aside>
       <div class="contenido">
         <header class="barra-superior">
@@ -90,17 +98,24 @@ function montarEstructura() {
             <input class="form-control" type="search" placeholder="Buscar deportista por nombre o código…" autocomplete="off" aria-label="Buscar deportista">
           </div>
           <div class="ms-auto d-flex align-items-center gap-2">
+            ${esAdmin() ? html`<label class="selector-coach" title="Coach cuyos datos estás viendo">
+              <i class="bi bi-person-badge"></i>
+              <select class="form-select form-select-sm" id="selector-coach" aria-label="Coach cuyos datos estás viendo">
+                <option value="">Todos los coaches</option>
+              </select></label>` : ''}
             <button class="boton-icono" id="boton-tema" title="Cambiar tema" aria-label="Cambiar tema"><i class="bi bi-${iconoTema()}"></i></button>
             <div class="dropdown">
               <button class="btn d-flex align-items-center gap-2 px-1" data-bs-toggle="dropdown" aria-label="Menú de usuario">
                 <span class="avatar">${iniciales(usuario.nombre)}</span>
                 <span class="d-none d-md-block text-start lh-sm"><span class="d-block small fw-semibold" id="nombre-usuario">${usuario.nombre}</span>
-                  <span class="d-block text-muted" style="font-size:.72rem">${usuario.correo}</span></span>
+                  <span class="d-block text-muted" style="font-size:.72rem">${usuario.correo}
+                    <span class="badge ${esAdmin() ? 'text-bg-warning' : 'text-bg-primary'} ms-1" id="rol-usuario">${esAdmin() ? 'Admin' : 'Coach'}</span></span></span>
                 <i class="bi bi-chevron-down small text-muted"></i>
               </button>
               <ul class="dropdown-menu dropdown-menu-end">
                 <li><a class="dropdown-item" href="#/cuenta"><i class="bi bi-person-gear me-2"></i>Mi cuenta</a></li>
                 <li><a class="dropdown-item" href="#/reportes"><i class="bi bi-download me-2"></i>Reportes</a></li>
+                ${esAdmin() ? html`<li><a class="dropdown-item" href="#/admin"><i class="bi bi-shield-lock me-2"></i>Coaches y accesos</a></li>` : ''}
                 <li><hr class="dropdown-divider"></li>
                 <li><button class="dropdown-item text-danger" id="boton-salir"><i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión</button></li>
               </ul>
@@ -122,10 +137,45 @@ function montarEstructura() {
   document.getElementById('boton-tema').addEventListener('click', cambiarTema);
   document.getElementById('boton-salir').addEventListener('click', async () => {
     await api.post('/auth/logout').catch(() => {});
-    usuario = null;
+    cambiarUsuario(null);
     ir('/login');
   });
   activarBuscador(document.getElementById('buscador'));
+  if (esAdmin()) activarSelectorCoach();
+}
+
+function cambiarUsuario(nuevo) {
+  usuario = nuevo;
+  fijarUsuario(nuevo);
+}
+
+/** Cuando cambia la cuenta (o su rol) se vuelve a dibujar el menú completo. */
+function desmontarEstructura() {
+  if (document.getElementById('vista')) app.replaceChildren();
+}
+
+// ---------------------------------------------------------------------------
+// Selector de coach (solo administrador)
+// ---------------------------------------------------------------------------
+async function cargarCoaches() {
+  const cuentas = await api.get('/admin/usuarios');
+  fijarCoaches(cuentas);
+  const selector = document.getElementById('selector-coach');
+  if (!selector) return;
+  montar(selector, html`<option value="">Todos los coaches</option>
+    ${listaCoaches().map((c) => html`<option value="${c.id}" ${c.id === coachElegido() ? 'selected' : ''}>${c.nombre}${c.rol === 'admin' ? ' (admin)' : ''}</option>`)}`);
+  selector.closest('.selector-coach').classList.toggle('filtrando', Boolean(coachElegido()));
+}
+
+function activarSelectorCoach() {
+  const selector = document.getElementById('selector-coach');
+  selector.addEventListener('change', () => {
+    elegirCoach(selector.value);
+    selector.closest('.selector-coach').classList.toggle('filtrando', Boolean(coachElegido()));
+    avisar(coachElegido() ? `Viendo los datos de ${selector.selectedOptions[0].textContent}.` : 'Viendo los datos de todos los coaches.', 'info');
+    navegar();
+  });
+  cargarCoaches().catch(() => avisar('No se pudo cargar la lista de coaches.', 'warning'));
 }
 
 function cambiarTema() {
@@ -217,6 +267,9 @@ async function navegar() {
   if (!destino) return mostrarNoEncontrado();
   if (!destino.publica && !usuario) return ir('/login');
   if (destino.publica && usuario && ruta !== '/') return ir('/dashboard');
+  if (destino.soloAdmin && !esAdmin()) return ir('/dashboard');
+  // Cuenta creada o restablecida por el administrador: primero debe poner su propia contraseña
+  if (usuario?.debe_cambiar_clave && !destino.publica && ruta !== '/cuenta') return ir('/cuenta');
 
   destruirGraficos();
   limpiezaPublica?.();
@@ -228,7 +281,7 @@ async function navegar() {
     document.title = 'SportEval AI · Evaluación del rendimiento deportivo';
     limpiezaPublica = await destino.vista(app, {
       usuario,
-      alEntrar: (u) => { usuario = u; ir('/dashboard'); },
+      alEntrar: (u) => { cambiarUsuario(u); desmontarEstructura(); ir(u.debe_cambiar_clave ? '/cuenta' : '/dashboard'); },
     }) || null;
     return undefined;
   }
@@ -277,13 +330,13 @@ function mostrarNoEncontrado() {
 // ---------------------------------------------------------------------------
 window.addEventListener('sesion-expirada', () => {
   if (!usuario) return;
-  usuario = null;
+  cambiarUsuario(null);
   avisar('Tu sesión expiró. Vuelve a iniciar sesión para continuar.', 'warning');
   ir('/login');
 });
 
 window.addEventListener('usuario-actualizado', (e) => {
-  usuario = { ...usuario, ...e.detail };
+  cambiarUsuario({ ...usuario, ...e.detail });
   const nombre = document.getElementById('nombre-usuario');
   if (nombre) nombre.textContent = usuario.nombre;
   const avatar = document.querySelector('.barra-superior .avatar');
@@ -315,6 +368,8 @@ if (navigator.onLine === false) avisoConexion?.classList.add('visible');
 
 window.addEventListener('hashchange', navegar);
 window.addEventListener('recargar-vista', navegar);
+// El panel de administración avisa cuando crea, edita o elimina cuentas
+window.addEventListener('coaches-cambiaron', () => { if (esAdmin()) cargarCoaches().catch(() => {}); });
 document.addEventListener('click', (e) => {
   const menu = document.getElementById('menu-lateral');
   if (menu && !menu.contains(e.target) && !e.target.closest('#boton-menu')) menu.classList.remove('abierto');
@@ -332,6 +387,6 @@ document.addEventListener('click', (e) => {
       <p class="text-muted">Revisa tu conexión y recarga la página.</p><a class="btn btn-primary" href="/">Recargar</a></div></div>`);
     return;
   }
-  usuario = await api.get('/auth/sesion').catch(() => null);
+  cambiarUsuario(await api.get('/auth/sesion').catch(() => null));
   navegar();
 }());

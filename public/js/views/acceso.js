@@ -1,4 +1,7 @@
-/** Pantallas públicas: inicio de sesión y registro de coaches, con escena 3D. */
+/**
+ * Pantalla pública de inicio de sesión, con escena 3D.
+ * No hay registro público: las cuentas de los coaches las crea el administrador.
+ */
 import { api } from '../api.js';
 import { html, montar, conCarga, datosFormulario, pintarErrorFormulario } from '../ui.js';
 import { iniciarEscena } from '../escena3d.js';
@@ -66,27 +69,12 @@ const campo = (nombre, etiqueta, icono, tipo = 'text', extra = '') => html`
 export function login(contenedor, { alEntrar }) {
   return pantalla(contenedor, {
     titulo: 'Bienvenido de nuevo',
-    subtitulo: 'Inicia sesión para ver el rendimiento de tus deportistas.',
+    subtitulo: 'Inicia sesión con la cuenta que te entregó tu administrador.',
     campos: html`${campo('correo', 'Correo electrónico', 'envelope', 'email', 'autocomplete="email"')}
       ${campo('password', 'Contraseña', 'lock', 'password', 'autocomplete="current-password"')}`,
     boton: html`Iniciar sesión <i class="bi bi-arrow-right ms-1"></i>`,
-    pie: html`¿Aún no tienes cuenta? <a href="#/registro" class="fw-semibold">Crea una aquí</a>`,
+    pie: html`<i class="bi bi-shield-lock me-1"></i>¿No tienes cuenta? Pídesela al administrador de tu academia.`,
     accion: (datos) => api.post('/auth/login', datos),
-    alEntrar,
-  });
-}
-
-export function registro(contenedor, { alEntrar }) {
-  return pantalla(contenedor, {
-    titulo: 'Crea tu cuenta de coach',
-    subtitulo: 'Cada coach gestiona sus propios deportistas y evaluaciones.',
-    campos: html`${campo('nombre', 'Nombre completo', 'person', 'text', 'autocomplete="name" maxlength="120"')}
-      ${campo('correo', 'Correo electrónico', 'envelope', 'email', 'autocomplete="email"')}
-      ${campo('password', 'Contraseña (mínimo 6 caracteres)', 'lock', 'password', 'autocomplete="new-password" minlength="6"')}
-      ${campo('confirmar', 'Confirmar contraseña', 'lock-fill', 'password', 'autocomplete="new-password"')}`,
-    boton: html`Crear cuenta <i class="bi bi-arrow-right ms-1"></i>`,
-    pie: html`¿Ya tienes cuenta? <a href="#/login" class="fw-semibold">Inicia sesión</a>`,
-    accion: (datos) => api.post('/auth/registro', datos),
     alEntrar,
   });
 }

@@ -6,6 +6,7 @@ import {
 } from '../ui.js';
 import { CAPACIDADES } from '../constantes.js';
 import { ir, recargarVista } from '../navegacion.js';
+import { esAdmin, coachElegido } from '../sesion.js';
 
 const ORDENES = [
   { valor: 'fecha_desc', texto: 'Más recientes' },
@@ -33,6 +34,7 @@ export async function darDeBajaEvaluacion(id, alTerminar) {
 
 export async function render(vista, { query }) {
   const filtros = Object.fromEntries(query);
+  const verCoach = esAdmin() && !coachElegido();
   const [evaluaciones, { datos: deportistas, categorias }] = await Promise.all([
     api.get(`/evaluaciones${consulta(filtros)}`),
     api.get('/deportistas'),
@@ -80,7 +82,8 @@ export async function render(vista, { query }) {
   tablaPaginada(vista.querySelector('[data-tabla] tbody'), vista.querySelector('.paginacion'), evaluaciones, (e) => html`
     <tr class="fila-enlace" data-ir="/deportistas/${e.deportista_id}">
       <td class="text-nowrap">${fecha(e.fecha)}</td>
-      <td><span class="fw-semibold">${e.nombre}</span> <span class="text-muted small">${e.codigo}</span></td>
+      <td><span class="fw-semibold">${e.nombre}</span> <span class="text-muted small">${e.codigo}</span>
+        ${verCoach ? html`<div class="insignia-coach"><i class="bi bi-person-badge"></i>${e.coach}</div>` : ''}</td>
       <td>${e.categoria || '—'}</td>
       ${CAPACIDADES.map((c) => html`<td class="text-center">${numero(e[c.clave])}</td>`)}
       <td class="text-center">${insigniaPuntaje(e.puntuacion_general)}</td>

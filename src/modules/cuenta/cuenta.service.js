@@ -1,5 +1,6 @@
 /**
- * Cuenta del coach: datos personales, contraseña, respaldo y reinicio de datos.
+ * Cuenta del usuario: datos personales, contraseña, respaldo y reinicio de datos.
+ * Cada coach puede cambiar su nombre y su contraseña; el correo y el rol solo los cambia el administrador.
  */
 const bcrypt = require('bcryptjs');
 const { query, transaccion } = require('../../db/pool');
@@ -8,7 +9,7 @@ const { validar } = require('../../utils/validar');
 
 const TABLAS_DEPORTIVAS = ['evaluaciones', 'alimentacion', 'predicciones'];
 
-const publico = ({ id, nombre, correo, rol }) => ({ id, nombre, correo, rol });
+const { publico } = require('../auth/auth.service');
 
 async function actualizarPerfil(usuarioId, datos) {
   const { nombre } = validar({ nombre: { tipo: 'texto', etiqueta: 'Nombre', requerido: true, maxLargo: 120 } }, datos);
@@ -29,14 +30,18 @@ async function cambiarPassword(usuarioId, datos) {
   if (!rows.length) throw new HttpError(401, 'La cuenta ya no existe');
   if (!(await bcrypt.compare(actual, rows[0].password_hash))) throw new HttpError(400, 'La contraseña actual no es correcta');
 
-  await query('UPDATE usuarios SET password_hash = $2 WHERE id = $1', [usuarioId, await bcrypt.hash(nueva, 10)]);
+  if (await bcrypt.compare(nueva, rows[0].password_hash)) throw new HttpError(400, 'La contraseña nueva debe ser distinta de la actual');
+  await query('UPDATE usuarios SET password_hash = $2, debe_cambiar_clave = false WHERE id = $1', [usuarioId, await bcrypt.hash(nueva, 10)]);
 }
 
-/** Copia completa de los datos del coach en JSON (incluye registros dados de baja). */
-async function respaldo(usuario) {
+/**
+ * Copia completa en JSON (incluye registros dados de baja) de los datos del alcance:
+ * los del coach, o los de todos los coaches si el administrador está viendo a todos.
+ */
+async function respaldo(alcance, usuario) {
   const { rows: listaDeportistas } = await query(
-    'SELECT * FROM deportistas WHERE usuario_id = $1 ORDER BY id',
-    [usuario.id],
+    'SELECT * FROM deportistas WHERE ($1::int IS NULL OR usuario_id = $1) ORDER BY id',
+    [alcance],
   );
   const ids = listaDeportistas.map((d) => d.id);
   const tablas = await Promise.all(TABLAS_DEPORTIVAS.map((tabla) =>
@@ -44,19 +49,21 @@ async function respaldo(usuario) {
 
   return {
     generado_en: new Date().toISOString(),
-    coach: { nombre: usuario.nombre, correo: usuario.correo },
+    generado_por: { nombre: usuario.nombre, correo: usuario.correo, rol: usuario.rol },
+    alcance: alcance ? 'un coach' : 'todos los coaches',
     deportistas: listaDeportistas,
     ...Object.fromEntries(TABLAS_DEPORTIVAS.map((tabla, i) => [tabla, tablas[i].rows])),
   };
 }
 
 /**
- * Borra definitivamente todos los deportistas del coach (y en cascada sus
+ * Borra definitivamente todos los deportistas de un coach (y en cascada sus
  * evaluaciones, alimentación y predicciones) y su modelo de ML. La cuenta se conserva.
+ * Solo lo puede hacer el administrador (ver cuenta.routes.js).
  */
 async function reiniciar(usuarioId, confirmacion) {
   if (confirmacion !== 'REINICIAR') {
-    throw new HttpError(400, 'Escribe REINICIAR para confirmar el borrado de tus datos');
+    throw new HttpError(400, 'Escribe REINICIAR para confirmar el borrado de los datos');
   }
   return transaccion(async (cliente) => {
     const { rowCount } = await cliente.query('DELETE FROM deportistas WHERE usuario_id = $1', [usuarioId]);

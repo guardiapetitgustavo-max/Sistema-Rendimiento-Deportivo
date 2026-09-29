@@ -36,8 +36,7 @@ const SEGURIDAD = [
 export async function render(contenedor, { usuario }) {
   const botonesAcceso = usuario
     ? html`<a class="btn btn-primary btn-brillo" href="#/dashboard">Ir a mi panel <i class="bi bi-arrow-right ms-1"></i></a>`
-    : html`<a class="btn btn-link text-white-50 d-none d-sm-inline-block" href="#/login">Iniciar sesión</a>
-      <a class="btn btn-primary btn-brillo" href="#/registro">Crear cuenta</a>`;
+    : html`<a class="btn btn-primary btn-brillo" href="#/login">Iniciar sesión <i class="bi bi-box-arrow-in-right ms-1"></i></a>`;
 
   montar(contenedor, html`
     <div class="publico" data-bs-theme="dark">
@@ -67,7 +66,7 @@ export async function render(contenedor, { usuario }) {
               <div class="d-flex flex-wrap gap-2 mb-4">
                 ${usuario
     ? html`<a class="btn btn-primary btn-lg btn-brillo px-4" href="#/dashboard">Ir a mi panel <i class="bi bi-arrow-right ms-1"></i></a>`
-    : html`<a class="btn btn-primary btn-lg btn-brillo px-4" href="#/registro">Crear mi cuenta <i class="bi bi-arrow-right ms-1"></i></a>`}
+    : html`<a class="btn btn-primary btn-lg btn-brillo px-4" href="#/login">Iniciar sesión <i class="bi bi-arrow-right ms-1"></i></a>`}
                 <a class="btn btn-outline-light btn-lg px-4" href="#/" data-ir-a="funciones">Ver funciones</a>
               </div>
               <div class="d-flex flex-wrap gap-3 small text-muted">
@@ -137,8 +136,8 @@ export async function render(contenedor, { usuario }) {
       <section class="seccion pt-0">
         <div class="container"><div class="cta-final revelar">
           <h2 class="text-white mb-3">Tu próxima temporada empieza con datos</h2>
-          <p class="text-white-50 mb-4">Crea tu cuenta de coach y carga tu primera evaluación en minutos.</p>
-          <a class="btn btn-light btn-lg px-4 fw-bold" href="${usuario ? '#/dashboard' : '#/registro'}">${usuario ? 'Ir a mi panel' : 'Crear mi cuenta'}</a>
+          <p class="text-white-50 mb-4">Tu administrador crea tu cuenta de coach; entra y carga tu primera evaluación en minutos.</p>
+          <a class="btn btn-light btn-lg px-4 fw-bold" href="${usuario ? '#/dashboard' : '#/login'}">${usuario ? 'Ir a mi panel' : 'Iniciar sesión'}</a>
         </div></div>
       </section>
 

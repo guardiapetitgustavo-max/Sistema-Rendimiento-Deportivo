@@ -12,34 +12,38 @@ const deportistas = require('../deportistas/deportistas.service');
 const ETIQUETAS_CAPACIDAD = CAPACIDADES.map((c) => capitalizar(NOMBRE_CAPACIDAD[c]));
 const vacio = (valor) => valor ?? '';
 
-function general(academia) {
+// Cuando el administrador ve a todos los coaches, los reportes indican de quién es cada deportista
+const columnaCoach = (conCoach) => (conCoach ? ['Coach'] : []);
+const celdaCoach = (conCoach, d) => (conCoach ? [d.coach] : []);
+
+function general(academia, { conCoach } = {}) {
   return {
     titulo: 'Reporte general de rendimiento',
-    columnas: ['Código', 'Nombre', 'Categoría', 'Disciplina', 'Evaluaciones', 'Promedio general', 'Nivel', 'Última evaluación'],
+    columnas: ['Código', 'Nombre', ...columnaCoach(conCoach), 'Categoría', 'Disciplina', 'Evaluaciones', 'Promedio general', 'Nivel', 'Última evaluación'],
     filas: academia.map((d) => [
-      d.codigo, d.nombre, vacio(d.categoria), vacio(d.disciplina), d.total_evaluaciones,
+      d.codigo, d.nombre, ...celdaCoach(conCoach, d), vacio(d.categoria), vacio(d.disciplina), d.total_evaluaciones,
       vacio(d.promedio_general), d.nivel || 'Sin dato', formatearFecha(d.ultima_evaluacion?.fecha),
     ]),
   };
 }
 
-function ranking(academia) {
+function ranking(academia, { conCoach } = {}) {
   const filas = academia
     .map((d) => ({ d, ev: [...d.evaluaciones].reverse().find((e) => Object.keys(puntajes(e)).length) }))
     .filter(({ ev }) => ev)
     .sort((a, b) => (b.d.promedio_general ?? -1) - (a.d.promedio_general ?? -1))
     .map(({ d, ev }, i) => [
-      i + 1, d.codigo, d.nombre, vacio(d.categoria),
+      i + 1, d.codigo, d.nombre, ...celdaCoach(conCoach, d), vacio(d.categoria),
       ...CAPACIDADES.map((c) => vacio(ev[c])), vacio(d.promedio_general),
     ]);
   return {
     titulo: 'Ranking por indicadores deportivos',
-    columnas: ['Puesto', 'Código', 'Nombre', 'Categoría', ...ETIQUETAS_CAPACIDAD, 'Promedio general'],
+    columnas: ['Puesto', 'Código', 'Nombre', ...columnaCoach(conCoach), 'Categoría', ...ETIQUETAS_CAPACIDAD, 'Promedio general'],
     filas,
   };
 }
 
-function seguimiento(academia) {
+function seguimiento(academia, { conCoach } = {}) {
   const filas = academia
     .filter((d) => d.promedio_general !== null)
     .map((d) => {
@@ -52,10 +56,10 @@ function seguimiento(academia) {
     })
     .filter(({ motivos }) => motivos.length)
     .sort((a, b) => a.d.promedio_general - b.d.promedio_general)
-    .map(({ d, motivos }) => [d.codigo, d.nombre, vacio(d.categoria), d.promedio_general, motivos.join(' | ')]);
+    .map(({ d, motivos }) => [d.codigo, d.nombre, ...celdaCoach(conCoach, d), vacio(d.categoria), d.promedio_general, motivos.join(' | ')]);
   return {
     titulo: 'Deportistas que requieren seguimiento',
-    columnas: ['Código', 'Nombre', 'Categoría', 'Promedio general', 'Motivo de seguimiento'],
+    columnas: ['Código', 'Nombre', ...columnaCoach(conCoach), 'Categoría', 'Promedio general', 'Motivo de seguimiento'],
     filas,
   };
 }
@@ -105,13 +109,13 @@ const TIPOS = [...Object.keys(GENERADORES), 'individual'];
 async function generar(usuarioId, tipo, deportistaId) {
   if (!TIPOS.includes(tipo)) throw solicitudInvalida(`Tipo de reporte desconocido: ${tipo}`);
   const academia = await deportistas.cargarAcademia(usuarioId);
-  return tipo === 'individual' ? individual(academia, deportistaId) : GENERADORES[tipo](academia);
+  return tipo === 'individual' ? individual(academia, deportistaId) : GENERADORES[tipo](academia, { conCoach: usuarioId === null });
 }
 
 /** Datos para la pantalla de reportes. */
 async function resumen(usuarioId) {
   const academia = await deportistas.cargarAcademia(usuarioId);
-  return Object.fromEntries(Object.entries(GENERADORES).map(([tipo, fn]) => [tipo, fn(academia)]));
+  return Object.fromEntries(Object.entries(GENERADORES).map(([tipo, fn]) => [tipo, fn(academia, { conCoach: usuarioId === null })]));
 }
 
 module.exports = { TIPOS, generar, resumen };

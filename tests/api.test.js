@@ -17,9 +17,10 @@ const ok = (condicion, mensaje, extra) =>
 
 function cliente() {
   let cookie = '';
-  return async (metodo, ruta, cuerpo, { csrf = true, form } = {}) => {
+  return async (metodo, ruta, cuerpo, { csrf = true, form, coach } = {}) => {
     const headers = {};
     if (cookie) headers.Cookie = cookie;
+    if (coach) headers['X-Coach'] = String(coach);
     if (csrf) headers['X-Requested-With'] = 'fetch';
     let body;
     if (form) body = form; else if (cuerpo !== undefined) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(cuerpo); }
@@ -63,16 +64,45 @@ test('flujo completo de la API', { skip: !URL_PRUEBAS && 'define TEST_DATABASE_U
   try {
     const api = cliente();
     const otro = cliente();
-    const correo = `coach${Date.now()}@test.pe`;
+    const admin = cliente();
+    const sello = Date.now();
+    const correo = `coach${sello}@test.pe`;
+    const correoAdmin = `admin${sello}@test.pe`;
+    const correoOtro = `otro${sello}@t.pe`;
 
-    let r = await api('POST', '/auth/registro', { nombre: 'Coach Test', correo, password: 'secreto1', confirmar: 'secreto1' });
-    ok(r.status === 201 && r.datos.correo === correo, 'registro crea cuenta e inicia sesión', r.datos);
-    r = await api('POST', '/auth/registro', { nombre: 'X', correo, password: 'secreto1' });
-    ok(r.status === 409, 'registro duplicado → 409', r);
-    r = await api('POST', '/auth/registro', { nombre: 'X', correo: 'malo', password: '1' });
-    ok(r.status === 400, 'registro inválido → 400', r.datos);
+    // Primer administrador (en producción se crea con sql/crear_admin.sql)
+    const bcrypt = require('bcryptjs');
+    await pool.query("INSERT INTO usuarios (nombre, correo, password_hash, rol) VALUES ('Admin', $1, $2, 'admin')",
+      [correoAdmin, await bcrypt.hash('admin123', 10)]);
+
+    let r = await api('POST', '/auth/registro', { nombre: 'X', correo, password: 'secreto1' });
+    ok([401, 404].includes(r.status), 'no existe registro público', r.status);
+    r = await admin('POST', '/auth/login', { correo: correoAdmin.toUpperCase(), password: 'admin123' });
+    ok(r.status === 200 && r.datos.rol === 'admin', 'login de administrador', r.datos);
+
+    // El administrador crea las cuentas de los coaches
+    r = await admin('POST', '/admin/usuarios', { nombre: 'Coach Test', correo, password: 'temporal1' });
+    ok(r.status === 201 && r.datos.rol === 'coach' && r.datos.debe_cambiar_clave && r.datos.clave_temporal === 'temporal1', 'admin crea coach', r.datos);
+    const coachId = r.datos.id;
+    r = await admin('POST', '/admin/usuarios', { nombre: 'X', correo, password: 'secreto1' });
+    ok(r.status === 409, 'correo duplicado → 409', r);
+    r = await admin('POST', '/admin/usuarios', { nombre: 'X', correo: 'malo', password: '1' });
+    ok(r.status === 400, 'cuenta inválida → 400', r.datos);
+    r = await admin('POST', '/admin/usuarios', { nombre: 'Otro Coach', correo: correoOtro });
+    ok(r.status === 201 && r.datos.clave_temporal.length === 10, 'clave temporal generada', r.datos);
+    const otroId = r.datos.id;
+    const claveOtro = r.datos.clave_temporal;
+
+    r = await api('POST', '/auth/login', { correo, password: 'temporal1' });
+    ok(r.status === 200 && r.datos.debe_cambiar_clave === true, 'coach entra y debe cambiar su clave', r.datos);
+    r = await api('PUT', '/cuenta/password', { actual: 'temporal1', nueva: 'temporal1', confirmar: 'temporal1' });
+    ok(r.status === 400, 'la clave nueva debe ser distinta', r.datos);
+    r = await api('PUT', '/cuenta/password', { actual: 'temporal1', nueva: 'secreto1', confirmar: 'secreto1' });
+    ok(r.status === 204, 'coach cambia su contraseña');
     r = await api('GET', '/auth/sesion');
-    ok(r.status === 200 && r.datos.nombre === 'Coach Test', 'sesión activa', r.datos);
+    ok(r.status === 200 && r.datos.nombre === 'Coach Test' && r.datos.debe_cambiar_clave === false, 'sesión activa', r.datos);
+    r = await api('GET', '/admin/usuarios');
+    ok(r.status === 403, 'coach no entra al panel de administración', r.status);
     r = await api('POST', '/deportistas', { codigo: 'X', nombre: 'Y' }, { csrf: false });
     ok(r.status === 403, 'CSRF: POST sin cabecera → 403', r.datos);
     r = await otro('GET', '/dashboard');
@@ -201,7 +231,8 @@ test('flujo completo de la API', { skip: !URL_PRUEBAS && 'define TEST_DATABASE_U
     ok(r.status === 400, 'tipo desconocido → 400', r.datos);
 
     // Aislamiento entre coaches
-    await otro('POST', '/auth/registro', { nombre: 'Otro Coach', correo: `otro${Date.now()}@t.pe`, password: 'secreto2' });
+    r = await otro('POST', '/auth/login', { correo: correoOtro, password: claveOtro });
+    ok(r.status === 200, 'otro coach entra con su clave temporal', r.datos);
     r = await otro('GET', `/deportistas/${ana.id}/perfil`);
     ok(r.status === 404, 'otro coach no ve deportistas ajenos', r.status);
     r = await otro('PUT', `/evaluaciones/${e1}`, { velocidad: 1 });
@@ -211,9 +242,59 @@ test('flujo completo de la API', { skip: !URL_PRUEBAS && 'define TEST_DATABASE_U
     r = await otro('GET', '/dashboard');
     ok(r.datos.totales.deportistas === 0, 'dashboard del otro coach vacío', r.datos.totales);
 
+    // El administrador ve y edita todo
+    r = await admin('GET', '/deportistas');
+    ok(r.status === 200 && r.datos.datos.some((d) => d.id === ana.id && d.coach === 'Coach Test'), 'admin ve deportistas de todos', r.datos.datos?.length);
+    r = await admin('GET', '/deportistas', undefined, { coach: otroId });
+    ok(r.datos.datos.length === 0, 'admin filtra por coach', r.datos.datos.length);
+    r = await admin('PUT', `/evaluaciones/${e1}`, { deportista_id: ana.id, velocidad: 66 });
+    ok(r.status === 200 && r.datos.velocidad === 66, 'admin edita evaluaciones de un coach', r.datos);
+    r = await admin('POST', '/deportistas', { codigo: 'ADM-1', nombre: 'Sin coach' });
+    ok(r.status === 400, 'admin viendo a todos debe elegir coach', r.datos);
+    r = await admin('POST', '/deportistas', { codigo: 'ADM-1', nombre: 'Para otro', coach_id: otroId });
+    ok(r.status === 201 && r.datos.usuario_id === otroId, 'admin crea deportista para un coach', r.datos);
+    r = await otro('GET', '/dashboard');
+    ok(r.datos.totales.deportistas === 1, 'el coach ve lo que le asignó el admin', r.datos.totales);
+    r = await admin('GET', '/dashboard');
+    ok(r.status === 200 && r.datos.totales.deportistas >= 6, 'dashboard global del admin', r.datos.totales);
+    r = await admin('GET', '/ml');
+    ok(r.status === 200, 'ML del admin con todos los coaches', r.datos);
+    r = await admin('POST', '/importacion/confirmar', { registros: [] });
+    ok(r.status === 400 && /elige primero un coach/i.test(r.datos.error), 'importar exige elegir coach', r.datos);
+    r = await admin('GET', '/admin/resumen');
+    ok(r.status === 200 && r.datos.coaches >= 2 && r.datos.deportistas >= 6, 'resumen global', r.datos);
+    r = await admin('GET', '/admin/usuarios');
+    ok(r.datos.find((u) => u.id === coachId)?.deportistas >= 5, 'lista de coaches con actividad', r.datos.find((u) => u.id === coachId));
+    r = await admin('PUT', `/admin/usuarios/${coachId}`, { nombre: 'Coach Editado' });
+    ok(r.status === 200 && r.datos.nombre === 'Coach Editado' && r.datos.correo === correo, 'admin edita un coach', r.datos);
+    r = await api('GET', '/auth/sesion');
+    ok(r.datos.nombre === 'Coach Editado', 'el cambio se aplica sin volver a entrar', r.datos);
+    r = await admin('GET', '/auth/sesion');
+    r = await admin('PUT', `/admin/usuarios/${r.datos.id}`, { rol: 'coach' });
+    ok(r.status === 400, 'admin no puede quitarse su propio rol', r.datos);
+    r = await admin('DELETE', `/admin/usuarios/${coachId}`);
+    ok(r.status === 409, 'no se elimina un coach con deportistas', r.datos);
+
+    // Desactivar y restablecer contraseña
+    r = await admin('PUT', `/admin/usuarios/${otroId}`, { activo: false });
+    ok(r.status === 200 && r.datos.activo === false, 'admin desactiva coach', r.datos);
+    r = await otro('GET', '/dashboard');
+    ok(r.status === 401, 'coach desactivado pierde la sesión al instante', r.status);
+    r = await otro('POST', '/auth/login', { correo: correoOtro, password: claveOtro });
+    ok(r.status === 403, 'coach desactivado no puede entrar', r.datos);
+    await admin('PUT', `/admin/usuarios/${otroId}`, { activo: true });
+    r = await admin('POST', `/admin/usuarios/${otroId}/password`, {});
+    ok(r.status === 200 && r.datos.clave_temporal.length === 10, 'admin restablece contraseña', r.datos);
+    r = await otro('POST', '/auth/login', { correo: correoOtro, password: r.datos.clave_temporal });
+    ok(r.status === 200 && r.datos.debe_cambiar_clave, 'entra con la clave restablecida', r.datos);
+    r = await admin('POST', `/admin/usuarios/${otroId}/transferir`, { destino_id: coachId });
+    ok(r.status === 200 && r.datos.deportistas_transferidos === 1, 'transferir deportistas a otro coach', r.datos);
+    r = await admin('DELETE', `/admin/usuarios/${otroId}`);
+    ok(r.status === 204, 'eliminar coach sin deportistas', r.status);
+
     // Baja de ausentes y reactivación
     r = await api('POST', '/importacion/confirmar', { registros: registros.filter((x) => x.codigo === 'A-1'), baja_ausentes: true });
-    ok(r.status === 201 && r.datos.dados_de_baja === 4, 'baja de ausentes', r.datos);
+    ok(r.status === 201 && r.datos.dados_de_baja === 5, 'baja de ausentes (incluye el transferido)', r.datos);
     r = await api('POST', '/importacion/confirmar', { registros: registros.filter((x) => x.codigo === 'A-2').slice(0, 1) });
     ok(r.datos.reactivados === 1, 'reactivación con historial', r.datos);
     r = await api('GET', '/deportistas?q=beto');
@@ -230,9 +311,13 @@ test('flujo completo de la API', { skip: !URL_PRUEBAS && 'define TEST_DATABASE_U
     // Cuenta
     r = await api('GET', '/cuenta/respaldo');
     ok(r.status === 200 && r.datos.deportistas.length >= 5, 'respaldo JSON', r.status);
-    r = await api('POST', '/cuenta/reiniciar', { confirmacion: 'no' });
-    ok(r.status === 400, 'reinicio exige confirmación', r.datos);
     r = await api('POST', '/cuenta/reiniciar', { confirmacion: 'REINICIAR' });
+    ok(r.status === 403, 'un coach no puede borrar datos', r.datos);
+    r = await admin('POST', '/cuenta/reiniciar', { confirmacion: 'REINICIAR' });
+    ok(r.status === 400, 'reinicio exige elegir un coach', r.datos);
+    r = await admin('POST', '/cuenta/reiniciar', { confirmacion: 'no' }, { coach: coachId });
+    ok(r.status === 400, 'reinicio exige confirmación', r.datos);
+    r = await admin('POST', '/cuenta/reiniciar', { confirmacion: 'REINICIAR' }, { coach: coachId });
     ok(r.status === 200 && r.datos.deportistas_borrados >= 5, 'reinicio de datos', r.datos);
     r = await api('GET', '/dashboard');
     ok(r.datos.totales.deportistas === 0 && r.datos.graficos.evolucion.fechas.length === 0, 'dashboard vacío tras reinicio', r.datos.totales);

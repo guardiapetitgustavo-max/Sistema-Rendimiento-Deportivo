@@ -3,6 +3,7 @@ const multer = require('multer');
 const servicio = require('./importacion.service');
 const { enviarDescarga } = require('../../utils/descarga');
 const { solicitudInvalida } = require('../../utils/http-error');
+const { coachDeTrabajo } = require('../../middlewares/roles');
 
 const router = Router();
 
@@ -19,6 +20,6 @@ router.post('/previsualizar', subida.single('archivo'), async (req, res) => {
   res.json(await servicio.previsualizar(req.file.buffer));
 });
 
-router.post('/confirmar', async (req, res) => res.status(201).json(await servicio.importar(req.usuario.id, req.body)));
+router.post('/confirmar', async (req, res) => res.status(201).json(await servicio.importar(coachDeTrabajo(req, 'importar un Excel'), req.body)));
 
 module.exports = router;

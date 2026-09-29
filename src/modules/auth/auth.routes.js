@@ -4,11 +4,7 @@ const { iniciarSesion, cerrarSesion, leerSesion } = require('../../middlewares/s
 
 const router = Router();
 
-router.post('/registro', async (req, res) => {
-  const usuario = await servicio.registrar(req.body);
-  iniciarSesion(res, usuario);
-  res.status(201).json(usuario);
-});
+// No hay registro público: las cuentas de los coaches las crea el administrador.
 
 router.post('/login', async (req, res) => {
   const usuario = await servicio.autenticar(req.body, req.ip);
@@ -22,6 +18,9 @@ router.post('/logout', (req, res) => {
 });
 
 // Sin sesión responde null (no es un error: simplemente no ha iniciado sesión)
-router.get('/sesion', (req, res) => res.json(leerSesion(req)));
+router.get('/sesion', async (req, res) => {
+  const usuario = await leerSesion(req);
+  res.json(usuario ? servicio.publico(usuario) : null);
+});
 
 module.exports = router;

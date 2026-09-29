@@ -11,16 +11,34 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- Usuarios (coaches). Cada coach ve y gestiona solo sus propios deportistas.
+-- Usuarios. Roles:
+--   admin → crea las cuentas de los coaches y ve / edita todos los datos.
+--   coach → ve y gestiona solo sus propios deportistas.
+-- No hay registro público: solo un administrador crea cuentas.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS usuarios (
-  id            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  nombre        TEXT        NOT NULL,
-  correo        TEXT        NOT NULL UNIQUE,
-  password_hash TEXT        NOT NULL,
-  rol           TEXT        NOT NULL DEFAULT 'coach',
-  creado_en     TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                 INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nombre             TEXT        NOT NULL,
+  correo             TEXT        NOT NULL UNIQUE,
+  password_hash      TEXT        NOT NULL,
+  rol                TEXT        NOT NULL DEFAULT 'coach',
+  activo             BOOLEAN     NOT NULL DEFAULT true,
+  debe_cambiar_clave BOOLEAN     NOT NULL DEFAULT false,
+  ultimo_acceso      TIMESTAMPTZ,
+  creado_en          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Actualiza bases creadas con versiones anteriores de este archivo
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo             BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS debe_cambiar_clave BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_acceso      TIMESTAMPTZ;
+UPDATE usuarios SET correo = lower(trim(correo)) WHERE correo <> lower(trim(correo));
+UPDATE usuarios SET rol = 'coach' WHERE rol NOT IN ('admin', 'coach');
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'usuarios_rol_valido') THEN
+    ALTER TABLE usuarios ADD CONSTRAINT usuarios_rol_valido CHECK (rol IN ('admin', 'coach'));
+  END IF;
+END $$;
 
 -- Control anti fuerza bruta del login (clave = IP + correo)
 CREATE TABLE IF NOT EXISTS intentos_login (

@@ -112,7 +112,7 @@ async function autocompletar(usuarioId) {
 const paso = (nombre, ok, detalle, tipo = ok ? 'success' : 'danger') => ({ nombre, ok, detalle, tipo });
 
 /** Modo Automático: completar datos → entrenar → predecir → resumir, con reporte paso a paso. */
-async function modoAutomatico(usuarioId, { usarDemo = false } = {}) {
+async function modoAutomatico(usuarioId, { usarDemo = false, clave = usuarioId } = {}) {
   const pasos = [];
 
   try {
@@ -125,7 +125,7 @@ async function modoAutomatico(usuarioId, { usarDemo = false } = {}) {
   }
 
   try {
-    const info = await ml.entrenar(usuarioId, { usarDemo });
+    const info = await ml.entrenar(usuarioId, { usarDemo, clave });
     pasos.push(paso(
       'Entrenar modelo de Machine Learning',
       true,
@@ -138,7 +138,7 @@ async function modoAutomatico(usuarioId, { usarDemo = false } = {}) {
   }
 
   try {
-    const r = await ml.predecirTodos(usuarioId);
+    const r = await ml.predecirTodos(usuarioId, { clave });
     pasos.push(paso('Generar predicciones', true, r.mensaje));
   } catch (error) {
     pasos.push(paso('Generar predicciones', false, error.message, 'warning'));
