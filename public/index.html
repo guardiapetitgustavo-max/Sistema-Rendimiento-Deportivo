@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <title>SportEval AI · Evaluación del rendimiento deportivo</title>
+  <meta name="description" content="Plataforma para academias y clubes: evalúa deportistas, detecta alertas, predice su nivel con Machine Learning y genera rutinas y reportes en segundos.">
+  <meta name="theme-color" content="#070b18">
+  <meta property="og:title" content="SportEval AI · Evaluación del rendimiento deportivo">
+  <meta property="og:description" content="Evaluaciones, alertas, Machine Learning, rutinas por deporte y reportes en Excel y PDF para tu academia.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/vendor/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link href="/vendor/bootstrap.min.css" rel="stylesheet">
+  <link href="/vendor/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/styles.css" rel="stylesheet">
+  <script src="/js/tema-inicial.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div class="pantalla-carga"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Cargando…</span></div></div>
+  </div>
+  <div id="avisos" class="toast-container position-fixed top-0 end-0 p-3" aria-live="polite"></div>
+  <div id="aviso-conexion" class="aviso-conexion" role="status"><i class="bi bi-wifi-off"></i><span>Sin conexión a internet. Lo que estás escribiendo no se borra: guárdalo cuando vuelva la conexión.</span></div>
+  <noscript><p style="padding:2rem;font-family:sans-serif">SportEval AI necesita JavaScript activado para funcionar.</p></noscript>
+
+  <script src="/vendor/bootstrap.bundle.min.js"></script>
+  <script src="/vendor/chart.umd.min.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
