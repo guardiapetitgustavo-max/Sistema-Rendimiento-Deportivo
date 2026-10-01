@@ -27,7 +27,7 @@ const MENSAJES_ESTADO = {
   504: 'El servidor tardó demasiado en responder. Inténtalo de nuevo',
 };
 
-async function unaVez(metodo, ruta, cuerpo) {
+async function unaVez(metodo, ruta, cuerpo, { todaLaAcademia = false } = {}) {
   const control = new AbortController();
   const temporizador = setTimeout(() => control.abort(), TIEMPO_MAXIMO_MS);
   const opciones = {
@@ -37,7 +37,7 @@ async function unaVez(metodo, ruta, cuerpo) {
     signal: control.signal,
   };
   // Administrador: la API trabaja con los datos del coach elegido en la barra superior
-  if (coachElegido()) opciones.headers['X-Coach'] = String(coachElegido());
+  if (coachElegido() && !todaLaAcademia) opciones.headers['X-Coach'] = String(coachElegido());
   if (cuerpo instanceof FormData) {
     opciones.body = cuerpo;
   } else if (cuerpo !== undefined) {
@@ -58,11 +58,11 @@ async function unaVez(metodo, ruta, cuerpo) {
 }
 
 /** Solo las lecturas (GET) se reintentan: nunca se repite algo que pueda guardar dos veces. */
-async function conReintentos(metodo, ruta, cuerpo) {
+async function conReintentos(metodo, ruta, cuerpo, opcionesExtra) {
   const intentos = metodo === 'GET' ? 3 : 1;
   for (let intento = 1; ; intento += 1) {
     try {
-      const respuesta = await unaVez(metodo, ruta, cuerpo);
+      const respuesta = await unaVez(metodo, ruta, cuerpo, opcionesExtra);
       if (intento < intentos && ESTADOS_REINTENTABLES.has(respuesta.status)) {
         await esperar(500 * intento);
         continue;
@@ -81,8 +81,8 @@ async function errorDesde(respuesta) {
   return new ErrorApi(respuesta.status, mensaje, Array.isArray(datos.detalles) ? datos.detalles : [], datos.referencia || null);
 }
 
-async function solicitar(metodo, ruta, cuerpo) {
-  const respuesta = await conReintentos(metodo, ruta, cuerpo);
+async function solicitar(metodo, ruta, cuerpo, opcionesExtra) {
+  const respuesta = await conReintentos(metodo, ruta, cuerpo, opcionesExtra);
   if (respuesta.status === 204) return null;
   if (!respuesta.ok) {
     if (respuesta.status === 401 && !ruta.startsWith('/auth/')) {
@@ -104,7 +104,8 @@ export function consulta(params = {}) {
 }
 
 export const api = {
-  get: (ruta) => solicitar('GET', ruta),
+  /** `{ todaLaAcademia: true }` ignora el coach elegido por el administrador (p. ej. para listas de selección). */
+  get: (ruta, opciones) => solicitar('GET', ruta, undefined, opciones),
   post: (ruta, cuerpo = {}) => solicitar('POST', ruta, cuerpo),
   put: (ruta, cuerpo) => solicitar('PUT', ruta, cuerpo),
   delete: (ruta) => solicitar('DELETE', ruta),

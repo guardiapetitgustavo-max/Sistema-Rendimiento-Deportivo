@@ -20,6 +20,6 @@ router.post('/previsualizar', subida.single('archivo'), async (req, res) => {
   res.json(await servicio.previsualizar(req.file.buffer));
 });
 
-router.post('/confirmar', async (req, res) => res.status(201).json(await servicio.importar(coachDeTrabajo(req, 'importar un Excel'), req.body)));
+router.post('/confirmar', async (req, res) => res.status(201).json(await servicio.importar({ academia: req.alcance.academia, coach: coachDeTrabajo(req, 'importar un Excel') }, req.body)));
 
 module.exports = router;

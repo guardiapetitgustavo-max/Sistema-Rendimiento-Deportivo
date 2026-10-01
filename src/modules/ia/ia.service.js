@@ -39,8 +39,8 @@ async function consultarOpenAI(prompt) {
   }
 }
 
-async function analizarDeportista(usuarioId, deportistaId) {
-  const dep = await deportistas.cargarDeportista(usuarioId, deportistaId);
+async function analizarDeportista(alcance, deportistaId) {
+  const dep = await deportistas.cargarDeportista(alcance, deportistaId);
   const analisisLocal = reglas.analizarDeportista(dep);
   const analisisApi = await consultarOpenAI(
     `Analiza el rendimiento de este deportista y genera recomendaciones de entrenamiento personalizadas:\n\n${analisisLocal}`,
@@ -48,16 +48,16 @@ async function analizarDeportista(usuarioId, deportistaId) {
   return { deportista: { id: dep.id, nombre: dep.nombre, codigo: dep.codigo }, texto: analisisApi || analisisLocal, modo: analisisApi ? 'api' : 'local' };
 }
 
-async function resumenAcademia(usuarioId) {
-  return { texto: reglas.resumirAcademia(await deportistas.cargarAcademia(usuarioId)), modo: 'local' };
+async function resumenAcademia(alcance) {
+  return { texto: reglas.resumirAcademia(await deportistas.cargarAcademia(alcance)), modo: 'local' };
 }
 
 /**
  * Rellena SOLO las capacidades vacías con el promedio real del propio deportista,
  * de su disciplina o de la academia (en ese orden). Nunca sobrescribe datos registrados.
  */
-async function autocompletar(usuarioId) {
-  const academia = await deportistas.cargarAcademia(usuarioId);
+async function autocompletar(alcance) {
+  const academia = await deportistas.cargarAcademia(alcance);
   const promediosDe = (evaluaciones) => Object.fromEntries(
     CAPACIDADES.map((c) => [c, promedio(evaluaciones.map((e) => e[c]))]).filter(([, v]) => v !== null),
   );
@@ -112,11 +112,11 @@ async function autocompletar(usuarioId) {
 const paso = (nombre, ok, detalle, tipo = ok ? 'success' : 'danger') => ({ nombre, ok, detalle, tipo });
 
 /** Modo Automático: completar datos → entrenar → predecir → resumir, con reporte paso a paso. */
-async function modoAutomatico(usuarioId, { usarDemo = false, clave = usuarioId } = {}) {
+async function modoAutomatico(alcance, { usarDemo = false, clave } = {}) {
   const pasos = [];
 
   try {
-    const r = await autocompletar(usuarioId);
+    const r = await autocompletar(alcance);
     pasos.push(r.celdas
       ? paso('Auto-completar datos faltantes', true, `Se completaron ${r.celdas} valores vacíos en ${r.evaluaciones} evaluaciones con promedios reales (del deportista, su disciplina o la academia). No se sobrescribió ningún dato registrado.`)
       : paso('Auto-completar datos faltantes', true, 'No había valores vacíos: las evaluaciones ya estaban completas.', 'info'));
@@ -125,7 +125,7 @@ async function modoAutomatico(usuarioId, { usarDemo = false, clave = usuarioId }
   }
 
   try {
-    const info = await ml.entrenar(usuarioId, { usarDemo, clave });
+    const info = await ml.entrenar(alcance, { usarDemo, clave });
     pasos.push(paso(
       'Entrenar modelo de Machine Learning',
       true,
@@ -138,13 +138,13 @@ async function modoAutomatico(usuarioId, { usarDemo = false, clave = usuarioId }
   }
 
   try {
-    const r = await ml.predecirTodos(usuarioId, { clave });
+    const r = await ml.predecirTodos(alcance, { clave });
     pasos.push(paso('Generar predicciones', true, r.mensaje));
   } catch (error) {
     pasos.push(paso('Generar predicciones', false, error.message, 'warning'));
   }
 
-  const academia = await deportistas.cargarAcademia(usuarioId);
+  const academia = await deportistas.cargarAcademia(alcance);
   const totalAlertas = alertasAcademia(academia).length;
   pasos.push(paso('Resumen ejecutivo de la academia', true, `Resumen generado. Alertas automáticas activas: ${totalAlertas}.`, 'info'));
 

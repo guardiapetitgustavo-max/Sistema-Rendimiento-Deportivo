@@ -40,8 +40,8 @@ async function cambiarPassword(usuarioId, datos) {
  */
 async function respaldo(alcance, usuario) {
   const { rows: listaDeportistas } = await query(
-    'SELECT * FROM deportistas WHERE ($1::int IS NULL OR usuario_id = $1) ORDER BY id',
-    [alcance],
+    'SELECT * FROM deportistas WHERE academia_id = $1 AND ($2::int IS NULL OR usuario_id = $2) ORDER BY id',
+    [alcance.academia, alcance.coach],
   );
   const ids = listaDeportistas.map((d) => d.id);
   const tablas = await Promise.all(TABLAS_DEPORTIVAS.map((tabla) =>
@@ -50,7 +50,8 @@ async function respaldo(alcance, usuario) {
   return {
     generado_en: new Date().toISOString(),
     generado_por: { nombre: usuario.nombre, correo: usuario.correo, rol: usuario.rol },
-    alcance: alcance ? 'un coach' : 'todos los coaches',
+    academia: usuario.academia?.nombre,
+    alcance: alcance.coach ? 'un coach' : 'toda la academia',
     deportistas: listaDeportistas,
     ...Object.fromEntries(TABLAS_DEPORTIVAS.map((tabla, i) => [tabla, tablas[i].rows])),
   };
@@ -61,13 +62,13 @@ async function respaldo(alcance, usuario) {
  * evaluaciones, alimentación y predicciones) y su modelo de ML. La cuenta se conserva.
  * Solo lo puede hacer el administrador (ver cuenta.routes.js).
  */
-async function reiniciar(usuarioId, confirmacion) {
+async function reiniciar(alcance, confirmacion) {
   if (confirmacion !== 'REINICIAR') {
     throw new HttpError(400, 'Escribe REINICIAR para confirmar el borrado de los datos');
   }
   return transaccion(async (cliente) => {
-    const { rowCount } = await cliente.query('DELETE FROM deportistas WHERE usuario_id = $1', [usuarioId]);
-    await cliente.query('DELETE FROM modelos_ml WHERE usuario_id = $1', [usuarioId]);
+    const { rowCount } = await cliente.query('DELETE FROM deportistas WHERE academia_id = $1 AND usuario_id = $2', [alcance.academia, alcance.coach]);
+    await cliente.query('DELETE FROM modelos_ml WHERE academia_id = $1 AND usuario_id = $2', [alcance.academia, alcance.coach]);
     return { deportistas_borrados: rowCount };
   });
 }

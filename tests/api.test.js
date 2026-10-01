@@ -70,15 +70,23 @@ test('flujo completo de la API', { skip: !URL_PRUEBAS && 'define TEST_DATABASE_U
     const correoAdmin = `admin${sello}@test.pe`;
     const correoOtro = `otro${sello}@t.pe`;
 
-    // Primer administrador (en producción se crea con sql/crear_admin.sql)
+    // Super admin + primera academia (en producción se crea con sql/crear_admin.sql)
     const bcrypt = require('bcryptjs');
-    await pool.query("INSERT INTO usuarios (nombre, correo, password_hash, rol) VALUES ('Admin', $1, $2, 'admin')",
-      [correoAdmin, await bcrypt.hash('admin123', 10)]);
+    const { rows: [{ id: superId }] } = await pool.query(
+      "INSERT INTO usuarios (nombre, correo, password_hash, es_super_admin) VALUES ('Admin', $1, $2, true) RETURNING id",
+      [correoAdmin, await bcrypt.hash('admin123', 10)],
+    );
+    const { rows: [{ id: academiaA }] } = await pool.query(
+      "INSERT INTO academias (nombre, slug) VALUES ('Academia Sur', $1) RETURNING id", [`sur-${sello}`],
+    );
+    await pool.query('INSERT INTO academia_config (academia_id) VALUES ($1)', [academiaA]);
+    await pool.query("INSERT INTO membresias (usuario_id, academia_id, rol) VALUES ($1, $2, 'admin')", [superId, academiaA]);
 
     let r = await api('POST', '/auth/registro', { nombre: 'X', correo, password: 'secreto1' });
     ok([401, 404].includes(r.status), 'no existe registro público', r.status);
     r = await admin('POST', '/auth/login', { correo: correoAdmin.toUpperCase(), password: 'admin123' });
-    ok(r.status === 200 && r.datos.rol === 'admin', 'login de administrador', r.datos);
+    ok(r.status === 200 && r.datos.rol === 'admin' && r.datos.academia.id === academiaA && r.datos.es_super_admin, 'login de administrador', r.datos);
+    ok(r.datos.permisos.includes('permisos.configurar') && r.datos.academia.modulos.nutricion === true, 'sesión trae permisos y módulos', r.datos);
 
     // El administrador crea las cuentas de los coaches
     r = await admin('POST', '/admin/usuarios', { nombre: 'Coach Test', correo, password: 'temporal1' });
@@ -279,7 +287,7 @@ test('flujo completo de la API', { skip: !URL_PRUEBAS && 'define TEST_DATABASE_U
     r = await admin('PUT', `/admin/usuarios/${otroId}`, { activo: false });
     ok(r.status === 200 && r.datos.activo === false, 'admin desactiva coach', r.datos);
     r = await otro('GET', '/dashboard');
-    ok(r.status === 401, 'coach desactivado pierde la sesión al instante', r.status);
+    ok(r.status === 403, 'coach desactivado pierde el acceso al instante', r.status);
     r = await otro('POST', '/auth/login', { correo: correoOtro, password: claveOtro });
     ok(r.status === 403, 'coach desactivado no puede entrar', r.datos);
     await admin('PUT', `/admin/usuarios/${otroId}`, { activo: true });
@@ -291,6 +299,172 @@ test('flujo completo de la API', { skip: !URL_PRUEBAS && 'define TEST_DATABASE_U
     ok(r.status === 200 && r.datos.deportistas_transferidos === 1, 'transferir deportistas a otro coach', r.datos);
     r = await admin('DELETE', `/admin/usuarios/${otroId}`);
     ok(r.status === 204, 'eliminar coach sin deportistas', r.status);
+
+    // =====================================================================
+    // FASE 1 · Multi-academia, RBAC, configuración, portal y auditoría
+    // =====================================================================
+    const adminB = cliente();
+    const coachB = cliente();
+    const atleta = cliente();
+    const padre = cliente();
+    const correoAdminB = `adminb${sello}@t.pe`;
+    const correoCoachB = `coachb${sello}@t.pe`;
+
+    r = await api('GET', '/plataforma/academias');
+    ok(r.status === 403, 'un coach no entra a la plataforma', r.status);
+    r = await admin('POST', '/plataforma/academias', { nombre: 'Academia Norte', admin_nombre: 'Admin Norte', admin_correo: correoAdminB });
+    ok(r.status === 201 && r.datos.clave_temporal.length === 10, 'super admin crea academia con su administrador', r.datos);
+    const academiaB = r.datos.id;
+    r = await adminB('POST', '/auth/login', { correo: correoAdminB, password: r.datos.clave_temporal });
+    ok(r.status === 200 && r.datos.academia.id === academiaB && r.datos.rol === 'admin' && !r.datos.es_super_admin, 'admin B entra a su academia', r.datos);
+    r = await adminB('GET', '/plataforma/academias');
+    ok(r.status === 403, 'un admin de academia no es super admin', r.status);
+    r = await adminB('POST', '/admin/usuarios', { nombre: 'Coach Norte', correo: correoCoachB, password: 'norte123' });
+    const coachBId = r.datos.id;
+    await coachB('POST', '/auth/login', { correo: correoCoachB, password: 'norte123' });
+    r = await coachB('POST', '/deportistas', { codigo: 'D-1', nombre: 'Lucía Norte', disciplina: 'Natación' });
+    ok(r.status === 201, 'el mismo código puede existir en otra academia', r.datos);
+    const depB = r.datos.id;
+    await coachB('POST', '/evaluaciones', { deportista_id: depB, fecha: '2026-05-01', velocidad: 70, resistencia: 80 });
+
+    // Aislamiento total entre academias
+    r = await coachB('GET', '/deportistas');
+    ok(r.datos.datos.length === 1 && r.datos.datos[0].id === depB, 'coach B solo ve su academia', r.datos.datos.map((d) => d.nombre));
+    r = await coachB('GET', `/deportistas/${ana.id}/perfil`);
+    ok(r.status === 404, 'coach B no ve deportistas de A', r.status);
+    r = await coachB('PUT', `/evaluaciones/${e1}`, { velocidad: 1 });
+    ok(r.status === 404, 'coach B no edita evaluaciones de A', r.status);
+    r = await adminB('GET', '/deportistas', undefined, { coach: coachId });
+    ok(r.datos.datos.length === 0, 'admin B no puede mirar a un coach de A con X-Coach', r.datos.datos.length);
+    r = await adminB('POST', '/deportistas', { codigo: 'X-9', nombre: 'Intruso', coach_id: coachId });
+    ok(r.status === 400, 'admin B no asigna deportistas a un coach de A', r.datos);
+    r = await adminB('PUT', `/admin/usuarios/${coachId}`, { nombre: 'Hackeado' });
+    ok(r.status === 404, 'admin B no edita usuarios de A', r.status);
+    r = await adminB('GET', '/admin/usuarios');
+    ok(r.datos.length === 2 && r.datos.every((u) => [correoAdminB, correoCoachB].includes(u.correo)), 'admin B solo lista su academia', r.datos.map((u) => u.correo));
+    r = await adminB('GET', '/dashboard');
+    ok(r.datos.totales.deportistas === 1, 'dashboard de B solo cuenta B', r.datos.totales);
+    r = await adminB('GET', '/reportes/general/excel');
+    ok(r.status === 200, 'reporte de B', r.status);
+    r = await adminB('GET', '/reportes');
+    ok(r.datos.general.filas.length === 1 && r.datos.general.filas[0][1] === 'Lucía Norte', 'reportes de B sin datos de A', r.datos.general.filas);
+    r = await admin('GET', '/deportistas');
+    ok(!r.datos.datos.some((d) => d.id === depB), 'admin A no ve deportistas de B', r.datos.datos.length);
+    r = await admin('GET', '/ml');
+    ok(r.status === 200 && r.datos.predicciones.every((p) => p.deportista_id !== depB), 'ML de A sin datos de B');
+
+    // Permisos configurables por academia
+    r = await coachB('GET', '/academia/permisos');
+    ok(r.status === 403, 'coach no configura permisos', r.status);
+    r = await adminB('GET', '/academia/permisos');
+    ok(r.status === 200 && r.datos.permisos.find((p) => p.clave === 'importacion.usar').valores.coach.permitido === true, 'matriz de permisos', r.datos.roles);
+    r = await adminB('PUT', '/academia/permisos', { cambios: [{ rol: 'coach', permiso: 'usuarios.gestionar', permitido: true }] });
+    ok(r.status === 400, 'no se conceden permisos de solo administrador', r.datos);
+    r = await adminB('PUT', '/academia/permisos', { cambios: [{ rol: 'deportista', permiso: 'evaluaciones.gestionar', permitido: true }] });
+    ok(r.status === 400, 'un deportista nunca puede modificar resultados', r.datos);
+    r = await adminB('PUT', '/academia/permisos', { cambios: [{ rol: 'coach', permiso: 'importacion.usar', permitido: false }] });
+    ok(r.status === 200, 'admin B quita un permiso al coach', r.datos);
+    r = await coachB('POST', '/importacion/confirmar', { registros: [] });
+    ok(r.status === 403, 'permiso retirado → 403', r.status);
+    r = await coachB('GET', '/auth/sesion');
+    ok(!r.datos.permisos.includes('importacion.usar') && r.datos.permisos.includes('deportistas.ver'), 'la sesión refleja el permiso retirado', r.datos.permisos);
+    r = await api('GET', '/auth/sesion');
+    ok(r.datos.permisos.includes('importacion.usar'), 'el cambio en B no afecta a A', r.datos.permisos);
+
+    // Configuración y módulos
+    r = await adminB('PUT', '/academia', { zona_horaria: 'Marte/Olympus' });
+    ok(r.status === 400, 'zona horaria inválida → 400', r.datos);
+    r = await adminB('PUT', '/academia', { color_primario: 'rojo' });
+    ok(r.status === 400, 'color inválido → 400', r.datos);
+    r = await adminB('PUT', '/academia', { modulos: { video: true } });
+    ok(r.status === 400, 'no se activa un módulo aún no disponible', r.datos);
+    r = await adminB('PUT', '/academia', { logo: 'data:text/html;base64,PHNjcmlwdD4=' });
+    ok(r.status === 400, 'logo que no es imagen → 400', r.datos);
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    r = await adminB('PUT', '/academia', {
+      nombre: 'Academia Norte SAC', ciudad: 'Trujillo', color_primario: '#0ea5e9', moneda: 'usd', logo: png, modulos: { nutricion: false },
+    });
+    ok(r.status === 200 && r.datos.nombre === 'Academia Norte SAC' && r.datos.config.moneda === 'USD' && r.datos.tiene_logo && r.datos.config.modulos.nutricion === false, 'admin B configura su academia', r.datos);
+    r = await coachB('GET', '/academia/logo');
+    ok(r.status === 200 && r.tipo.includes('image/png'), 'logo servido a los miembros', r.tipo);
+    r = await coachB('PUT', '/academia', { nombre: 'Tomada' });
+    ok(r.status === 403, 'coach no configura la academia', r.status);
+    r = await coachB('GET', '/alimentacion');
+    ok(r.status === 403, 'módulo desactivado → 403', r.status);
+    r = await api('GET', '/alimentacion');
+    ok(r.status === 200, 'el módulo sigue activo en A', r.status);
+    r = await admin('GET', '/academia/logo');
+    ok(r.status === 404, 'A no ve el logo de B', r.status);
+
+    // Portal del deportista y del padre (solo lectura, solo sus fichas)
+    r = await adminB('POST', '/admin/usuarios', { nombre: 'Lucía', correo: `lucia${sello}@t.pe`, password: 'lucia123', rol: 'deportista', deportistas: [ana.id] });
+    ok(r.status === 400, 'no se vincula una ficha de otra academia', r.datos);
+    r = await adminB('POST', '/admin/usuarios', { nombre: 'Lucía', correo: `lucia${sello}@t.pe`, password: 'lucia123', rol: 'deportista', deportistas: [depB] });
+    ok(r.status === 201 && r.datos.rol === 'deportista', 'admin B crea cuenta de deportista vinculada', r.datos);
+    r = await adminB('POST', '/admin/usuarios', { nombre: 'Mamá de Lucía', correo: `mama${sello}@t.pe`, password: 'mama1234', rol: 'padre', deportistas: [depB] });
+    ok(r.status === 201, 'admin B crea cuenta de padre vinculada', r.datos);
+    r = await atleta('POST', '/auth/login', { correo: `lucia${sello}@t.pe`, password: 'lucia123' });
+    ok(r.status === 200 && r.datos.rol === 'deportista' && r.datos.permisos.join() === 'portal.ver', 'deportista solo tiene el portal', r.datos.permisos);
+    r = await atleta('GET', '/portal/deportistas');
+    ok(r.datos.length === 1 && r.datos[0].id === depB, 'deportista ve su ficha', r.datos);
+    r = await atleta('GET', `/portal/deportistas/${depB}`);
+    ok(r.status === 200 && r.datos.evaluaciones.length === 1 && !('prediccion' in r.datos), 'deportista consulta su perfil', Object.keys(r.datos));
+    r = await atleta('GET', '/deportistas');
+    ok(r.status === 403, 'deportista no ve la lista de la academia', r.status);
+    r = await atleta('POST', '/evaluaciones', { deportista_id: depB, velocidad: 100 });
+    ok(r.status === 403, 'deportista no modifica resultados', r.status);
+    r = await atleta('GET', `/portal/deportistas/${ana.id}`);
+    ok(r.status === 404, 'deportista no ve fichas ajenas', r.status);
+    r = await padre('POST', '/auth/login', { correo: `mama${sello}@t.pe`, password: 'mama1234' });
+    r = await padre('GET', '/portal/deportistas');
+    ok(r.status === 200 && r.datos.length === 1, 'padre ve a su hijo', r.datos);
+    r = await padre('GET', '/dashboard');
+    ok(r.status === 403, 'padre no ve el dashboard de la academia', r.status);
+
+    // Una persona en dos academias
+    r = await admin('POST', '/admin/usuarios', { nombre: 'Coach Norte', correo: correoCoachB, rol: 'coach' });
+    ok(r.status === 201 && r.datos.cuenta_existente && r.datos.clave_temporal === null, 'se da acceso a una cuenta existente sin tocar su clave', r.datos);
+    r = await adminB('POST', `/admin/usuarios/${coachBId}/password`, {});
+    ok(r.status === 403, 'un admin no cambia la clave de una cuenta que también se usa en otra academia', r.datos);
+    r = await adminB('PUT', `/admin/usuarios/${coachBId}`, { nombre: 'Otro nombre' });
+    ok(r.status === 403, 'un admin no cambia la identidad de una cuenta compartida', r.datos);
+    r = await adminB('PUT', `/admin/usuarios/${coachBId}`, { activo: true });
+    ok(r.status === 200, 'pero sí gestiona su acceso a la academia', r.datos);
+    r = await coachB('GET', '/auth/sesion');
+    ok(r.datos.academias.length === 2, 'coach B pertenece a dos academias', r.datos.academias);
+    r = await coachB('POST', '/auth/academia', { academia_id: academiaA });
+    ok(r.status === 200 && r.datos.academia.id === academiaA, 'cambio de academia activa', r.datos.academia);
+    r = await coachB('GET', '/deportistas');
+    ok(r.datos.datos.length === 0, 'en A no ve sus deportistas de B', r.datos.datos.length);
+    r = await atleta('POST', '/auth/academia', { academia_id: academiaA });
+    ok(r.status === 403, 'no se entra a una academia sin membresía', r.status);
+    await coachB('POST', '/auth/academia', { academia_id: academiaB });
+
+    // Suspensión de una academia
+    r = await admin('PUT', `/plataforma/academias/${academiaB}`, { estado: 'suspendida' });
+    ok(r.status === 200 && r.datos.estado === 'suspendida', 'super admin suspende la academia B', r.datos);
+    r = await adminB('GET', '/dashboard');
+    ok(r.status === 403 && /suspendida/.test(r.datos.error), 'academia suspendida → acceso bloqueado al instante', r.datos);
+    r = await adminB('POST', '/auth/login', { correo: correoAdminB, password: 'x' });
+    r = await coachB('GET', '/auth/sesion');
+    ok(r.datos.academia.id === academiaA, 'quien pertenece a otra academia sigue trabajando en ella', r.datos.academia);
+    r = await admin('PUT', `/plataforma/academias/${academiaB}`, { estado: 'activa' });
+    r = await adminB('GET', '/dashboard');
+    ok(r.status === 200, 'academia reactivada', r.status);
+    r = await admin('GET', '/plataforma/academias');
+    const filaB = r.datos.find((a) => a.id === academiaB);
+    ok(filaB.deportistas === 1 && filaB.coaches === 1 && !filaB.soy_miembro && !('nombre_deportistas' in filaB), 'la plataforma muestra uso sin datos privados', filaB);
+    r = await admin('POST', `/plataforma/academias/${academiaB}/acceso`);
+    ok(r.status === 204, 'acceso explícito del super admin', r.status);
+
+    // Auditoría por academia
+    r = await adminB('GET', '/academia/auditoria');
+    const acciones = r.datos.map((a) => a.accion);
+    ok(r.status === 200 && ['configurar', 'configurar_permisos', 'plataforma:estado_suspendida', 'plataforma:acceso_super_admin', 'login'].every((a) => acciones.includes(a)), 'auditoría registra los eventos de B', acciones);
+    ok(r.datos.some((a) => a.accion === 'crear' && a.entidad === 'deportistas'), 'auditoría registra altas', acciones);
+    ok(!r.datos.some((a) => a.correo === correo), 'auditoría de B sin eventos de A', r.datos.length);
+    r = await coachB('GET', '/academia/auditoria');
+    ok(r.status === 403, 'coach no ve la auditoría por defecto', r.status);
 
     // Baja de ausentes y reactivación
     r = await api('POST', '/importacion/confirmar', { registros: registros.filter((x) => x.codigo === 'A-1'), baja_ausentes: true });

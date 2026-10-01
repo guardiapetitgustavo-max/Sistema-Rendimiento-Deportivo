@@ -18,8 +18,8 @@ function evolucionPorFecha(evaluaciones) {
   return { fechas, valores: fechas.map((f) => redondear(promedio(porFecha.get(f)))) };
 }
 
-async function obtener(usuarioId) {
-  const academia = await deportistas.cargarAcademia(usuarioId);
+async function obtener(alcance) {
+  const academia = await deportistas.cargarAcademia(alcance);
   const evaluaciones = academia.flatMap((d) => d.evaluaciones);
   const conPromedio = academia.filter((d) => d.promedio_general !== null);
 

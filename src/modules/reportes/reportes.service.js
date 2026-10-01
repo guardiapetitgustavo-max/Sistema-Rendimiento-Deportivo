@@ -106,16 +106,16 @@ function individual(academia, deportistaId) {
 const GENERADORES = { general, ranking, seguimiento, evolucion, estadisticas };
 const TIPOS = [...Object.keys(GENERADORES), 'individual'];
 
-async function generar(usuarioId, tipo, deportistaId) {
+async function generar(alcance, tipo, deportistaId) {
   if (!TIPOS.includes(tipo)) throw solicitudInvalida(`Tipo de reporte desconocido: ${tipo}`);
-  const academia = await deportistas.cargarAcademia(usuarioId);
-  return tipo === 'individual' ? individual(academia, deportistaId) : GENERADORES[tipo](academia, { conCoach: usuarioId === null });
+  const academia = await deportistas.cargarAcademia(alcance);
+  return tipo === 'individual' ? individual(academia, deportistaId) : GENERADORES[tipo](academia, { conCoach: alcance.coach === null });
 }
 
 /** Datos para la pantalla de reportes. */
-async function resumen(usuarioId) {
-  const academia = await deportistas.cargarAcademia(usuarioId);
-  return Object.fromEntries(Object.entries(GENERADORES).map(([tipo, fn]) => [tipo, fn(academia, { conCoach: usuarioId === null })]));
+async function resumen(alcance) {
+  const academia = await deportistas.cargarAcademia(alcance);
+  return Object.fromEntries(Object.entries(GENERADORES).map(([tipo, fn]) => [tipo, fn(academia, { conCoach: alcance.coach === null })]));
 }
 
 module.exports = { TIPOS, generar, resumen };

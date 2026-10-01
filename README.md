@@ -1,7 +1,11 @@
-# SportEval AI · Sistema de Rendimiento Deportivo
+# SportEval AI · Plataforma de rendimiento deportivo
 
-Sistema web para evaluar el rendimiento de deportistas por observación directa, con
-Machine Learning, asistente de IA, rutinas por deporte, alimentación y reportes en Excel/PDF.
+Plataforma **multi-academia** (SaaS) para gestionar academias deportivas y evaluar el rendimiento de sus
+deportistas, con roles y permisos configurables, Machine Learning, asistente de IA, rutinas por deporte,
+alimentación y reportes en Excel/PDF.
+
+> **Arquitectura y hoja de ruta:** [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md). Estado: **FASE 1 implementada**
+> (multi-academia, roles, permisos, configuración por academia y auditoría).
 
 **Stack:** Node.js + Express (API) · PostgreSQL en Supabase · Frontend HTML/JS con Bootstrap, Chart.js y three.js (3D) · Despliegue en Vercel.
 
@@ -15,8 +19,14 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 | Módulo | Qué hace |
 |---|---|
 | Portada | Página de presentación del producto con escena 3D (se adapta si el equipo no soporta 3D). |
-| Roles | **Administrador:** crea las cuentas de los coaches (no hay registro público), las edita, desactiva, restablece contraseñas, mueve deportistas entre coaches y ve / edita **todos** los datos. **Coach:** ve y gestiona **solo sus** deportistas y cambia su nombre y contraseña. |
-| Coaches y accesos | Panel del administrador con la actividad de cada coach y un selector en la barra superior para trabajar con los datos de uno o de todos. |
+| Plataforma | El **super administrador** crea academias con su primer administrador, las suspende o reactiva y ve su uso (sin acceder a datos privados salvo acceso explícito y auditado). |
+| Multi-academia | Cada academia tiene sus datos **totalmente aislados**. Una persona puede pertenecer a varias academias y cambiar de una a otra. |
+| Roles | **Administrador** (configura y gestiona su academia) · **Coach** (opera con sus deportistas) · **Deportista** y **Padre/madre** (consultan su progreso, sin modificar resultados). |
+| Usuarios | El administrador crea las cuentas (no hay registro público), vincula deportistas y padres con sus fichas, activa/desactiva accesos, restablece contraseñas y transfiere deportistas entre coaches. |
+| Permisos | Matriz por rol editable por cada academia (qué puede hacer cada coach, deportista y padre). |
+| Configuración | Datos de la academia, logo, colores (se aplican a la interfaz) y módulos activables (nutrición, ML, IA…). |
+| Auditoría | Registro de inicios de sesión, altas, cambios, bajas y cambios de configuración de cada academia. |
+| Mi progreso | Portal de solo lectura para deportistas y padres: evolución, fortalezas y evaluaciones. |
 | Deportistas | Alta, edición y baja lógica (el historial nunca se pierde; se reactiva si vuelve). |
 | Evaluaciones | 8 capacidades (0-100). La puntuación general se calcula sola si se deja vacía. |
 | Importar Excel | Sube un `.xlsx`, revisa la vista previa con errores por fila/columna y confirma. |
@@ -27,7 +37,7 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 | Rutinas | Rutina semanal según el deporte o su familia de deportes, con refuerzo de debilidades. PDF descargable. |
 | Alimentación | Comidas, hidratación y horas de sueño por día. |
 | Reportes | General, ranking, evolución, seguimiento, estadísticas e individual en Excel y PDF. |
-| Mi cuenta | Datos personales, contraseña, tema y respaldo JSON. El reinicio de datos es solo para el administrador. |
+| Mi cuenta | Datos personales, contraseña, tema, cambio de academia y respaldo JSON. El reinicio de datos es solo para el administrador. |
 
 ---
 
@@ -47,7 +57,8 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 │       ├── graficos.js       # Gráficos (Chart.js) adaptados al tema
 │       └── views/            # Una vista por pantalla
 ├── sql/schema.sql            # Base de datos completa para pegar en Supabase
-├── sql/crear_admin.sql       # Crea (o recupera) la cuenta de administrador
+├── sql/crear_admin.sql       # Crea (o recupera) la cuenta del super administrador
+├── docs/ARQUITECTURA.md      # Análisis, arquitectura objetivo y hoja de ruta por fases
 ├── src/
 │   ├── app.js                # Aplicación Express
 │   ├── server.js             # Servidor local (npm run dev)
@@ -55,10 +66,12 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 │   ├── config/env.js         # Variables de entorno
 │   ├── db/pool.js            # Conexión a PostgreSQL
 │   ├── domain/rendimiento.js # Reglas de negocio (niveles, umbrales, promedios)
-│   ├── middlewares/          # Sesión, roles (admin/coach), seguridad y errores
+│   ├── core/                 # Catálogos de permisos y módulos, auditoría
+│   ├── middlewares/          # Sesión, academia activa, permisos, seguridad y errores
 │   ├── utils/                # Validación, fechas, descargas, rutas CRUD
-│   └── modules/              # auth, admin, deportistas, evaluaciones, alimentacion, importacion,
-│                             # ml, ia, rutinas, alertas, dashboard, reportes, cuenta
+│   └── modules/              # auth, plataforma, academia, admin (usuarios), portal, deportistas,
+│                             # evaluaciones, alimentacion, importacion, ml, ia, rutinas, alertas,
+│                             # dashboard, reportes, cuenta
 ├── tests/                    # Pruebas unitarias y de integración (node:test)
 ├── .github/workflows/ci.yml  # Verificación automática en GitHub
 ├── .env.example
@@ -71,8 +84,10 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 
 1. Entra a [supabase.com](https://supabase.com) → **New project** (guarda la contraseña de la base de datos).
 2. Ve a **SQL Editor → New query**, pega **todo** el contenido de [`sql/schema.sql`](sql/schema.sql) y pulsa **Run**.
-3. Abre otra **New query**, pega [`sql/crear_admin.sql`](sql/crear_admin.sql), cambia el correo y la contraseña
-   del administrador y pulsa **Run**. No hay registro público: con esa cuenta crearás las de los coaches.
+3. Abre otra **New query**, pega [`sql/crear_admin.sql`](sql/crear_admin.sql), escribe tu nombre, correo y contraseña
+   en las 3 líneas marcadas con `←` y pulsa **Run**. Esa cuenta queda como **super administrador** y como
+   administradora de la primera academia. No hay registro público: con ella crearás academias y usuarios.
+   *(Si ya tenías datos de una versión anterior, `schema.sql` los migra solo a "Mi academia" sin perder nada.)*
 4. Ve a **Connect** (arriba) → **Connection string** → **Transaction pooler** y copia la URL
    (termina en `:6543/postgres`). Reemplaza `[YOUR-PASSWORD]` por tu contraseña.
 
@@ -122,18 +137,24 @@ Descarga la plantilla desde **Importar Excel → Descargar plantilla**.
 
 ---
 
-## Roles y cuentas
+## Roles, academias y cuentas
 
-- **No hay registro público.** El administrador crea cada cuenta en **Coaches y accesos → Nueva cuenta**; el sistema
-  genera una contraseña temporal (o usa la que escribas) y la muestra **una sola vez** para entregársela al coach.
-- Al entrar por primera vez, el coach **debe cambiar** esa contraseña. Luego puede cambiar su nombre y su contraseña
-  cuando quiera; el correo y el rol solo los cambia el administrador.
-- El administrador usa el **selector de coach** de la barra superior: "Todos los coaches" para ver la academia completa,
-  o un coach concreto para trabajar con sus datos (importar Excel, entrenar su modelo, reiniciar sus datos).
-- Desactivar una cuenta cierra su sesión al instante y conserva todos sus datos. Para eliminar una cuenta primero hay que
-  transferir sus deportistas a otro coach.
-- Los cambios de rol, nombre o estado se aplican al instante, sin volver a iniciar sesión.
-- ¿Olvidaste la contraseña del administrador? Ejecuta de nuevo `sql/crear_admin.sql` con una contraseña nueva.
+| Rol | Dónde | Qué hace |
+|---|---|---|
+| Super administrador | Plataforma | Crea, renombra, suspende y reactiva academias. Ve cifras de uso, no datos deportivos. |
+| Administrador | Su academia | Configura la academia, sus usuarios, permisos y módulos. Ve y edita todo dentro de ella. |
+| Coach | Su academia | Opera con **sus** deportistas según los permisos que le dé la academia. |
+| Deportista | Su academia | Consulta su propio progreso (solo lectura). |
+| Padre / madre | Su academia | Consulta el progreso de los deportistas vinculados (solo lectura). |
+
+- **No hay registro público.** El administrador crea cada cuenta en **Usuarios → Nuevo usuario**; el sistema genera una
+  contraseña temporal (o usa la que escribas) y la muestra **una sola vez**. Al entrar por primera vez hay que cambiarla.
+- Si el correo ya tiene cuenta en otra academia, solo se le da acceso a esta y conserva su contraseña. Por seguridad,
+  el nombre, correo y contraseña de una cuenta compartida solo los cambia la propia persona (o el super admin).
+- El administrador usa el **selector de coach** de la barra superior: "Toda la academia" o un coach concreto (necesario
+  para importar Excel, entrenar su modelo o reiniciar sus datos).
+- Suspender una academia, desactivar un acceso, cambiar un permiso o un módulo se aplica **al instante**.
+- ¿Olvidaste la contraseña del super administrador? Ejecuta de nuevo `sql/crear_admin.sql` con una contraseña nueva.
 
 ## Reglas del sistema
 
@@ -169,7 +190,8 @@ y si el equipo no soporta 3D o prefiere menos movimiento, la interfaz se adapta 
 
 Contraseñas con bcrypt · sesión en cookie `HttpOnly` + `SameSite` (y `Secure` en producción) ·
 protección CSRF por cabecera · bloqueo tras 5 intentos fallidos de login · cuentas creadas solo por el administrador ·
-contraseña temporal obligatoria de cambiar · cada coach solo accede a sus datos · sesión validada contra la base en cada petición ·
+contraseña temporal obligatoria de cambiar · aislamiento total entre academias · permisos por rol en cada ruta ·
+cada coach solo accede a sus datos · sesión validada contra la base en cada petición · auditoría de toda escritura ·
 consultas SQL parametrizadas · HTML escapado en el frontend · CSP · RLS activado en Supabase.
 
 > Las predicciones y recomendaciones son herramientas de apoyo al entrenador, no diagnósticos médicos.

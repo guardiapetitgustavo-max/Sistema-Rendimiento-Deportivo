@@ -58,13 +58,13 @@ function datasetDemo(cantidad = 150, semilla = 42) {
  * Los modelos se guardan por "clave": el id del coach, o el del administrador cuando
  * entrena con los datos de todos los coaches (alcance null).
  */
-async function cargarModelo(clave) {
-  const { rows } = await query('SELECT modelo, info FROM modelos_ml WHERE usuario_id = $1', [clave]);
+async function cargarModelo(alcance, clave) {
+  const { rows } = await query('SELECT modelo, info FROM modelos_ml WHERE academia_id = $1 AND usuario_id = $2', [alcance.academia, clave]);
   return rows[0] || null;
 }
 
-async function entrenar(usuarioId, { usarDemo = false, clave = usuarioId } = {}) {
-  const academia = await deportistas.cargarAcademia(usuarioId);
+async function entrenar(alcance, { usarDemo = false, clave } = {}) {
+  const academia = await deportistas.cargarAcademia(alcance);
   const real = datasetReal(academia);
   let { X, y } = real;
   const esDemo = X.length < MIN_REGISTROS_REALES;
@@ -103,20 +103,20 @@ async function entrenar(usuarioId, { usarDemo = false, clave = usuarioId } = {})
   };
 
   await query(
-    `INSERT INTO modelos_ml (usuario_id, modelo, info, entrenado_en) VALUES ($1, $2, $3, now())
-     ON CONFLICT (usuario_id) DO UPDATE SET modelo = EXCLUDED.modelo, info = EXCLUDED.info, entrenado_en = now()`,
-    [clave, JSON.stringify(modelo), JSON.stringify(info)],
+    `INSERT INTO modelos_ml (academia_id, usuario_id, modelo, info, entrenado_en) VALUES ($1, $2, $3, $4, now())
+     ON CONFLICT (academia_id, usuario_id) DO UPDATE SET modelo = EXCLUDED.modelo, info = EXCLUDED.info, entrenado_en = now()`,
+    [alcance.academia, clave, JSON.stringify(modelo), JSON.stringify(info)],
   );
   return info;
 }
 
 /** Genera una predicción por deportista usando su última evaluación completa. */
-async function predecirTodos(usuarioId, { clave = usuarioId } = {}) {
-  const guardado = await cargarModelo(clave);
+async function predecirTodos(alcance, { clave } = {}) {
+  const guardado = await cargarModelo(alcance, clave);
   if (!guardado) throw new HttpError(400, 'Primero debes entrenar el modelo de Machine Learning.');
   const { modelo, info } = guardado;
 
-  const academia = await deportistas.cargarAcademia(usuarioId);
+  const academia = await deportistas.cargarAcademia(alcance);
   const filas = [];
   let sinDatos = 0;
 
@@ -160,24 +160,24 @@ async function predecirTodos(usuarioId, { clave = usuarioId } = {}) {
 }
 
 /** Última predicción de cada deportista activo del coach. */
-async function ultimasPredicciones(usuarioId, { deportistaId = null, limite = 50 } = {}) {
+async function ultimasPredicciones(alcance, { deportistaId = null, limite = 50 } = {}) {
   const { rows } = await query(
     `SELECT * FROM (
        SELECT DISTINCT ON (p.deportista_id) p.*, d.codigo, d.nombre, d.categoria
        FROM predicciones p JOIN deportistas d ON d.id = p.deportista_id
-       WHERE ($1::int IS NULL OR d.usuario_id = $1) AND d.activo AND ($2::int IS NULL OR d.id = $2)
+       WHERE d.academia_id = $1 AND ($2::int IS NULL OR d.usuario_id = $2) AND d.activo AND ($3::int IS NULL OR d.id = $3)
        ORDER BY p.deportista_id, p.fecha DESC, p.id DESC
-     ) ultimas ORDER BY fecha DESC LIMIT $3`,
-    [usuarioId, deportistaId, limite],
+     ) ultimas ORDER BY fecha DESC LIMIT $4`,
+    [alcance.academia, alcance.coach, deportistaId, limite],
   );
   return rows;
 }
 
-async function estado(usuarioId, { clave = usuarioId } = {}) {
+async function estado(alcance, { clave } = {}) {
   const [guardado, academia, predicciones] = await Promise.all([
-    query('SELECT info FROM modelos_ml WHERE usuario_id = $1', [clave]),
-    deportistas.cargarAcademia(usuarioId),
-    ultimasPredicciones(usuarioId, { limite: 20 }),
+    query('SELECT info FROM modelos_ml WHERE academia_id = $1 AND usuario_id = $2', [alcance.academia, clave]),
+    deportistas.cargarAcademia(alcance),
+    ultimasPredicciones(alcance, { limite: 20 }),
   ]);
   return {
     info: guardado.rows[0]?.info || null,

@@ -301,6 +301,8 @@ export function pintarErrorFormulario(caja, error) {
 /**
  * Modal con formulario. `alGuardar(datos)` puede lanzar un error de la API:
  * se muestra dentro del modal y el formulario queda abierto para corregir.
+ * Si devuelve una función, se ejecuta cuando el modal ya terminó de cerrarse
+ * (útil para abrir otra ventana, como la de credenciales, sin superponerlas).
  */
 export function modalFormulario({ titulo, cuerpo, boton = 'Guardar', tamano = '', alGuardar }) {
   const { elemento, modal } = crearModal(html`
@@ -320,7 +322,8 @@ export function modalFormulario({ titulo, cuerpo, boton = 'Guardar', tamano = ''
     evento.preventDefault();
     cajaError.classList.add('d-none');
     try {
-      await conCarga(formulario.querySelector('[type="submit"]'), () => alGuardar(datosFormulario(formulario)));
+      const despues = await conCarga(formulario.querySelector('[type="submit"]'), () => alGuardar(datosFormulario(formulario)));
+      if (typeof despues === 'function') elemento.addEventListener('hidden.bs.modal', despues, { once: true });
       modal.hide();
     } catch (error) {
       pintarErrorFormulario(cajaError, error);

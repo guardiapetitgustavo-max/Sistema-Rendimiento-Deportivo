@@ -5,7 +5,9 @@ import {
 } from '../ui.js';
 import { ir } from '../navegacion.js';
 import { temaActual } from '../tema.js';
-import { esAdmin, coachElegido, nombreCoach } from '../sesion.js';
+import {
+  esAdmin, coachElegido, nombreCoach, puede, academiaActual, NOMBRE_ROL,
+} from '../sesion.js';
 
 /** Envía un formulario con manejo de errores dentro del propio formulario. */
 function alEnviar(formulario, accion) {
@@ -23,7 +25,8 @@ function alEnviar(formulario, accion) {
 
 export function render(vista, { usuario }) {
   const coach = coachElegido();
-  const alcance = esAdmin() ? (coach ? `de ${nombreCoach(coach) || 'el coach elegido'}` : 'de todos los coaches') : 'tuyos';
+  const alcance = esAdmin() ? (coach ? `de ${nombreCoach(coach) || 'el coach elegido'}` : 'de toda la academia') : 'tuyos';
+  const respaldo = academiaActual() && puede('respaldo.descargar');
   montar(vista, html`
     ${encabezado('person-gear', 'Mi cuenta', 'Tus datos de acceso, preferencias y copia de seguridad')}
     ${usuario.debe_cambiar_clave ? html`<div class="alert alert-warning d-flex gap-2 align-items-start" data-aviso-clave>
@@ -34,7 +37,8 @@ export function render(vista, { usuario }) {
         <span class="avatar mx-auto mb-3" style="width:84px;height:84px;font-size:1.6rem" data-avatar>${iniciales(usuario.nombre)}</span>
         <h3 class="h5 fw-bold mb-0" data-nombre>${usuario.nombre}</h3>
         <p class="text-muted small mb-3">${usuario.correo}</p>
-        <span class="badge ${esAdmin() ? 'text-bg-warning' : 'text-bg-primary'}">${esAdmin() ? 'Administrador' : 'Coach'}</span>
+        <span class="badge ${esAdmin() ? 'text-bg-warning' : 'text-bg-primary'}">${usuario.rol ? NOMBRE_ROL[usuario.rol] : 'Super administrador'}</span>
+        ${academiaActual() ? html`<div class="small text-muted mt-2"><i class="bi bi-building me-1"></i>${academiaActual().nombre}</div>` : ''}
         <hr>
         <div class="d-flex justify-content-between align-items-center">
           <span class="small">Tema de la interfaz</span>
@@ -74,12 +78,12 @@ export function render(vista, { usuario }) {
           <div class="card-footer text-end"><button class="btn btn-primary" type="submit">Actualizar contraseña</button></div>
         </form>
 
-        <div class="card"><div class="card-header"><i class="bi bi-cloud-download me-2"></i>Copia de seguridad</div>
+        ${respaldo ? html`<div class="card"><div class="card-header"><i class="bi bi-cloud-download me-2"></i>Copia de seguridad</div>
           <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
             <p class="small text-muted mb-0" style="max-width:520px">Descarga una copia completa (JSON) de los deportistas, evaluaciones,
               alimentación y predicciones <b>${alcance}</b>, incluidos los registros dados de baja.</p>
             <button class="btn btn-light" data-respaldo><i class="bi bi-download me-1"></i>Descargar respaldo</button>
-          </div></div>
+          </div></div>` : ''}
 
         ${esAdmin() ? html`<div class="card border border-danger-subtle"><div class="card-header text-danger"><i class="bi bi-exclamation-octagon me-2 text-danger"></i>Reiniciar datos de un coach</div>
           <div class="card-body">
@@ -111,7 +115,7 @@ export function render(vista, { usuario }) {
     }
   });
 
-  vista.querySelector('[data-respaldo]').addEventListener('click', (e) =>
+  vista.querySelector('[data-respaldo]')?.addEventListener('click', (e) =>
     conCarga(e.currentTarget, () => api.descargar('/cuenta/respaldo')).catch(mostrarError));
 
   vista.querySelector('[data-reiniciar]')?.addEventListener('click', async (e) => {

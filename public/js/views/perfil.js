@@ -7,6 +7,7 @@ import { lineas, radar } from '../graficos.js';
 import { CAPACIDADES } from '../constantes.js';
 import { ir, recargarVista } from '../navegacion.js';
 import { abrirFormularioDeportista, darDeBajaDeportista } from './deportistas.js';
+import { puede, moduloActivo } from '../sesion.js';
 import { darDeBajaEvaluacion } from './evaluaciones.js';
 import { abrirFormularioAlimentacion } from './alimentacion.js';
 
@@ -30,6 +31,8 @@ export async function render(vista, { params: [id] }) {
   } = perfil;
   const recargar = recargarVista;
   const ultima = d.ultima_evaluacion;
+  const puedeEvaluar = puede('evaluaciones.gestionar');
+  const nutricion = moduloActivo('nutricion') && puede('alimentacion.ver');
 
   montar(vista, html`
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
@@ -39,17 +42,17 @@ export async function render(vista, { params: [id] }) {
         <div class="mt-1">${insigniaNivel(d.nivel)} ${d.disciplina ? html`<span class="badge text-bg-light border">${d.disciplina}</span>` : ''}</div>
       </div>
       <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-success" href="#/evaluaciones/nueva?deportista=${d.id}"><i class="bi bi-clipboard-plus me-1"></i>Registrar evaluación</a>
+        ${puedeEvaluar ? html`<a class="btn btn-success" href="#/evaluaciones/nueva?deportista=${d.id}"><i class="bi bi-clipboard-plus me-1"></i>Registrar evaluación</a>` : ''}
         <a class="btn btn-outline-primary" href="#/deportistas/${d.id}/rutina"><i class="bi bi-calendar-week me-1"></i>Ver rutina</a>
         <div class="dropdown">
           <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">Más</button>
           <ul class="dropdown-menu dropdown-menu-end">
-            <li><button class="dropdown-item" data-accion="alimentacion"><i class="bi bi-egg-fried me-2"></i>Registrar alimentación</button></li>
-            <li><button class="dropdown-item" data-accion="excel"><i class="bi bi-file-earmark-excel me-2"></i>Reporte en Excel</button></li>
-            <li><button class="dropdown-item" data-accion="pdf"><i class="bi bi-file-earmark-pdf me-2"></i>Reporte en PDF</button></li>
-            <li><button class="dropdown-item" data-accion="editar"><i class="bi bi-pencil me-2"></i>Editar datos</button></li>
+            ${nutricion && puede('alimentacion.gestionar') ? html`<li><button class="dropdown-item" data-accion="alimentacion"><i class="bi bi-egg-fried me-2"></i>Registrar alimentación</button></li>` : ''}
+            ${puede('reportes.ver') ? html`<li><button class="dropdown-item" data-accion="excel"><i class="bi bi-file-earmark-excel me-2"></i>Reporte en Excel</button></li>
+            <li><button class="dropdown-item" data-accion="pdf"><i class="bi bi-file-earmark-pdf me-2"></i>Reporte en PDF</button></li>` : ''}
+            ${puede('deportistas.gestionar') ? html`<li><button class="dropdown-item" data-accion="editar"><i class="bi bi-pencil me-2"></i>Editar datos</button></li>
             <li><hr class="dropdown-divider"></li>
-            <li><button class="dropdown-item text-danger" data-accion="baja"><i class="bi bi-person-dash me-2"></i>Dar de baja</button></li>
+            <li><button class="dropdown-item text-danger" data-accion="baja"><i class="bi bi-person-dash me-2"></i>Dar de baja</button></li>` : ''}
           </ul>
         </div>
       </div>
@@ -83,7 +86,7 @@ export async function render(vista, { params: [id] }) {
           ${prediccion.modelo_demo ? html`<div class="small text-warning mb-2"><i class="bi bi-info-circle"></i> Modelo entrenado con datos de demostración.</div>` : ''}
           <p class="small mb-0 text-muted">Estimación estadística de apoyo, no un diagnóstico.</p>`
     : html`${vacio('Aún no hay predicción para este deportista', 'cpu')}
-          <div class="text-center"><a class="btn btn-sm btn-primary" href="#/ml">Ir a Machine Learning</a></div>`}
+          ${moduloActivo('ml') && puede('ml.usar') ? html`<div class="text-center"><a class="btn btn-sm btn-primary" href="#/ml">Ir a Machine Learning</a></div>` : ''}`}
         </div>
       </div></div>
     </div>
@@ -133,14 +136,14 @@ export async function render(vista, { params: [id] }) {
           ${CAPACIDADES.map((c) => html`<td class="text-center">${numero(e[c.clave])}</td>`)}
           <td class="text-center">${insigniaPuntaje(e.puntuacion_general)}</td>
           <td class="small text-muted">${e.observaciones || ''}</td>
-          <td class="text-end text-nowrap">
+          <td class="text-end text-nowrap">${puedeEvaluar ? html`
             <a class="btn btn-sm btn-outline-primary" href="#/evaluaciones/${e.id}/editar" title="Editar"><i class="bi bi-pencil"></i></a>
-            <button class="btn btn-sm btn-outline-danger" data-baja-evaluacion="${e.id}" title="Dar de baja"><i class="bi bi-trash"></i></button>
+            <button class="btn btn-sm btn-outline-danger" data-baja-evaluacion="${e.id}" title="Dar de baja"><i class="bi bi-trash"></i></button>` : ''}
           </td></tr>`) : html`<tr><td colspan="12">${vacio('Sin evaluaciones registradas')}</td></tr>`}</tbody>
       </table></div></div>
     </div>
 
-    <div class="card">
+    ${nutricion ? html`<div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-egg-fried me-2"></i>Alimentación reciente</span>
         <a class="btn btn-sm btn-outline-primary" href="#/alimentacion?deportista_id=${d.id}">Ver todo</a>
@@ -152,7 +155,7 @@ export async function render(vista, { params: [id] }) {
           <td>${numero(a.hidratacion_litros)}</td><td>${numero(a.horas_sueno)}</td></tr>`)
     : html`<tr><td colspan="6">${vacio('Sin registros de alimentación')}</td></tr>`}</tbody>
       </table></div></div>
-    </div>`);
+    </div>` : ''}`);
 
   if (evolucion.fechas.length) {
     lineas(vista.querySelector('#g-evolucion'), evolucion.fechas.map(fecha), [

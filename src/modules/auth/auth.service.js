@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const { query } = require('../../db/pool');
 const { HttpError } = require('../../utils/http-error');
 const { validar } = require('../../utils/validar');
+const auditoria = require('../../core/auditoria');
 
 const MAX_INTENTOS = 5;
 const VENTANA_MINUTOS = 5;
@@ -16,8 +17,8 @@ const esquemaLogin = {
 // Hash de relleno: se compara aunque el correo no exista para no revelar qué cuentas existen
 const HASH_RELLENO = bcrypt.hashSync('relleno-para-tiempo-constante', 10);
 
-const publico = ({ id, nombre, correo, rol, debe_cambiar_clave: debeCambiarClave }) => ({
-  id, nombre, correo, rol, debe_cambiar_clave: Boolean(debeCambiarClave),
+const publico = ({ id, nombre, correo, es_super_admin: superAdmin, debe_cambiar_clave: debeCambiarClave }) => ({
+  id, nombre, correo, es_super_admin: Boolean(superAdmin), debe_cambiar_clave: Boolean(debeCambiarClave),
 });
 
 /** Bloquea una combinación IP + correo tras varios intentos fallidos (anti fuerza bruta). */
@@ -56,6 +57,7 @@ async function autenticar(datos, ip) {
   const valida = await bcrypt.compare(password, usuario?.password_hash || HASH_RELLENO);
   if (!usuario || !valida) {
     await registrarFallo(clave);
+    await auditoria.registrar({ accion: 'login_fallido', entidad: 'usuarios', detalle: { correo }, ip });
     throw new HttpError(401, 'Correo o contraseña incorrectos');
   }
 
@@ -66,4 +68,36 @@ async function autenticar(datos, ip) {
   return publico(usuario);
 }
 
-module.exports = { autenticar, publico };
+/** Academias a las que pertenece el usuario (para el selector de academia). */
+async function academiasDe(usuarioId) {
+  const { rows } = await query(
+    `SELECT a.id, a.nombre, a.estado, m.rol FROM membresias m JOIN academias a ON a.id = m.academia_id
+     WHERE m.usuario_id = $1 AND m.activo ORDER BY a.nombre`,
+    [usuarioId],
+  );
+  return rows;
+}
+
+/** Todo lo que el frontend necesita para adaptar menús y pantallas al rol, permisos y módulos. */
+async function datosSesion(contexto) {
+  return {
+    ...publico(contexto),
+    rol: contexto.rol,
+    academia: contexto.academia,
+    permisos: contexto.permisos,
+    academia_suspendida: contexto.academia_suspendida,
+    academias: await academiasDe(contexto.id),
+  };
+}
+
+/** Comprueba que el usuario pueda entrar a esa academia (membresía activa y academia activa). */
+async function puedeEntrar(usuarioId, academiaId) {
+  const { rows } = await query(
+    `SELECT 1 FROM membresias m JOIN academias a ON a.id = m.academia_id
+     WHERE m.usuario_id = $1 AND m.academia_id = $2 AND m.activo AND a.estado = 'activa'`,
+    [usuarioId, academiaId],
+  );
+  if (!rows.length) throw new HttpError(403, 'No tienes acceso a esa academia o está suspendida');
+}
+
+module.exports = { autenticar, publico, datosSesion, puedeEntrar };

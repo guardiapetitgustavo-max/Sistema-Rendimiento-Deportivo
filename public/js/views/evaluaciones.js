@@ -6,7 +6,7 @@ import {
 } from '../ui.js';
 import { CAPACIDADES } from '../constantes.js';
 import { ir, recargarVista } from '../navegacion.js';
-import { esAdmin, coachElegido } from '../sesion.js';
+import { esAdmin, coachElegido, puede } from '../sesion.js';
 
 const ORDENES = [
   { valor: 'fecha_desc', texto: 'Más recientes' },
@@ -42,7 +42,7 @@ export async function render(vista, { query }) {
 
   montar(vista, html`
     ${encabezado('clipboard2-pulse', 'Evaluaciones', 'Historial de evaluaciones por observación directa (escala 0-100)', html`
-      <a class="btn btn-primary" href="#/evaluaciones/nueva"><i class="bi bi-clipboard-plus me-1"></i>Registrar evaluación</a>`)}
+      ${puede('evaluaciones.gestionar') ? html`<a class="btn btn-primary" href="#/evaluaciones/nueva"><i class="bi bi-clipboard-plus me-1"></i>Registrar evaluación</a>` : ''}`)}
 
     <div class="card mb-3"><div class="card-body">
       <form class="row g-2 align-items-end" data-filtros>
@@ -89,8 +89,8 @@ export async function render(vista, { query }) {
       <td class="text-center">${insigniaPuntaje(e.puntuacion_general)}</td>
       <td><span class="badge text-bg-light border">${e.origen}</span></td>
       <td class="text-end text-nowrap">
-        <a class="btn btn-sm btn-light" href="#/evaluaciones/${e.id}/editar" title="Editar" aria-label="Editar"><i class="bi bi-pencil"></i></a>
-        <button class="btn btn-sm btn-light text-danger" data-baja="${e.id}" title="Dar de baja" aria-label="Dar de baja"><i class="bi bi-trash"></i></button>
+        ${puede('evaluaciones.gestionar') ? html`<a class="btn btn-sm btn-light" href="#/evaluaciones/${e.id}/editar" title="Editar" aria-label="Editar"><i class="bi bi-pencil"></i></a>
+        <button class="btn btn-sm btn-light text-danger" data-baja="${e.id}" title="Dar de baja" aria-label="Dar de baja"><i class="bi bi-trash"></i></button>` : ''}
       </td>
     </tr>`, { columnas: CAPACIDADES.length + 6, mensajeVacio: 'No hay evaluaciones que coincidan', icono: 'clipboard2-pulse' });
 

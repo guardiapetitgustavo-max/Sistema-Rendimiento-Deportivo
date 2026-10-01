@@ -28,14 +28,16 @@ const PASOS = [
 
 const SEGURIDAD = [
   'Contraseñas cifradas y sesiones protegidas',
-  'Cada coach ve únicamente a sus deportistas',
+  'Cada academia con sus datos aislados',
+  'Roles y permisos configurables por academia',
   'Historial permanente: las bajas no borran datos',
-  'Respaldo descargable de toda tu información',
+  'Auditoría de cada cambio importante',
 ];
 
-export async function render(contenedor, { usuario }) {
+export async function render(contenedor, { usuario, inicio }) {
+  const panel = `#${inicio ? inicio() : '/dashboard'}`;
   const botonesAcceso = usuario
-    ? html`<a class="btn btn-primary btn-brillo" href="#/dashboard">Ir a mi panel <i class="bi bi-arrow-right ms-1"></i></a>`
+    ? html`<a class="btn btn-primary btn-brillo" href="${panel}">Ir a mi panel <i class="bi bi-arrow-right ms-1"></i></a>`
     : html`<a class="btn btn-primary btn-brillo" href="#/login">Iniciar sesión <i class="bi bi-box-arrow-in-right ms-1"></i></a>`;
 
   montar(contenedor, html`
@@ -65,7 +67,7 @@ export async function render(contenedor, { usuario }) {
                 en una sola plataforma web. Sin instalar nada y desde cualquier dispositivo.</p>
               <div class="d-flex flex-wrap gap-2 mb-4">
                 ${usuario
-    ? html`<a class="btn btn-primary btn-lg btn-brillo px-4" href="#/dashboard">Ir a mi panel <i class="bi bi-arrow-right ms-1"></i></a>`
+    ? html`<a class="btn btn-primary btn-lg btn-brillo px-4" href="${panel}">Ir a mi panel <i class="bi bi-arrow-right ms-1"></i></a>`
     : html`<a class="btn btn-primary btn-lg btn-brillo px-4" href="#/login">Iniciar sesión <i class="bi bi-arrow-right ms-1"></i></a>`}
                 <a class="btn btn-outline-light btn-lg px-4" href="#/" data-ir-a="funciones">Ver funciones</a>
               </div>
@@ -137,7 +139,7 @@ export async function render(contenedor, { usuario }) {
         <div class="container"><div class="cta-final revelar">
           <h2 class="text-white mb-3">Tu próxima temporada empieza con datos</h2>
           <p class="text-white-50 mb-4">Tu administrador crea tu cuenta de coach; entra y carga tu primera evaluación en minutos.</p>
-          <a class="btn btn-light btn-lg px-4 fw-bold" href="${usuario ? '#/dashboard' : '#/login'}">${usuario ? 'Ir a mi panel' : 'Iniciar sesión'}</a>
+          <a class="btn btn-light btn-lg px-4 fw-bold" href="${usuario ? panel : '#/login'}">${usuario ? 'Ir a mi panel' : 'Iniciar sesión'}</a>
         </div></div>
       </section>
 

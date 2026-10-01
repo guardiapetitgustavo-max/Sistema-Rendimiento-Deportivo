@@ -49,14 +49,14 @@ function evolucionPorCapacidad(evaluaciones) {
     }));
 }
 
-async function obtenerPerfil(usuarioId, id) {
-  const academia = await deportistas.cargarAcademia(usuarioId);
+async function obtenerPerfil(alcance, id) {
+  const academia = await deportistas.cargarAcademia(alcance);
   const dep = academia.find((d) => d.id === id);
   if (!dep) throw noEncontrado('Deportista');
 
   const [comida, [prediccion]] = await Promise.all([
     alimentacion.resumenDeportista(id),
-    ml.ultimasPredicciones(usuarioId, { deportistaId: id, limite: 1 }),
+    ml.ultimasPredicciones(alcance, { deportistaId: id, limite: 1 }),
   ]);
 
   const scores = puntajes(dep.ultima_evaluacion);

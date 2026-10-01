@@ -1,6 +1,8 @@
 const { Router } = require('express');
 const servicio = require('./cuenta.service');
-const { requiereAdmin, coachDeTrabajo } = require('../../middlewares/roles');
+const {
+  requiereAcademia, definirAlcance, requiereAdmin, requierePermiso, coachDeTrabajo,
+} = require('../../middlewares/roles');
 const { enviarDescarga } = require('../../utils/descarga');
 const { hoyISO } = require('../../utils/valores');
 
@@ -13,13 +15,14 @@ router.put('/password', async (req, res) => {
   res.status(204).end();
 });
 
-router.get('/respaldo', async (req, res) => {
+// Datos personales y contraseña: cualquier usuario. Respaldo y reinicio: dentro de su academia.
+router.get('/respaldo', requiereAcademia, definirAlcance, requierePermiso('respaldo.descargar'), async (req, res) => {
   const datos = await servicio.respaldo(req.alcance, req.usuario);
   enviarDescarga(res, Buffer.from(JSON.stringify(datos, null, 2)), `respaldo_sporteval_${hoyISO()}.json`, 'json');
 });
 
 // Borrado definitivo: solo el administrador, y sobre un coach concreto
-router.post('/reiniciar', requiereAdmin, async (req, res) =>
-  res.json(await servicio.reiniciar(coachDeTrabajo(req, 'reiniciar datos'), req.body?.confirmacion)));
+router.post('/reiniciar', requiereAcademia, definirAlcance, requiereAdmin, async (req, res) =>
+  res.json(await servicio.reiniciar({ academia: req.alcance.academia, coach: coachDeTrabajo(req, 'reiniciar datos') }, req.body?.confirmacion)));
 
 module.exports = router;

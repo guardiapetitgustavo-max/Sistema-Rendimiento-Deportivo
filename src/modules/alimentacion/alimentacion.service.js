@@ -19,14 +19,15 @@ const esquema = {
 };
 const COLUMNAS = Object.keys(esquema);
 
-async function listar(usuarioId, { deportista_id: deportistaId } = {}) {
+async function listar(alcance, { deportista_id: deportistaId } = {}) {
   const { rows } = await query(
     `SELECT a.*, d.codigo, d.nombre
      FROM alimentacion a JOIN deportistas d ON d.id = a.deportista_id
-     WHERE ($1::int IS NULL OR d.usuario_id = $1) AND d.activo AND a.activo AND ($2::int IS NULL OR a.deportista_id = $2)
+     WHERE d.academia_id = $1 AND ($2::int IS NULL OR d.usuario_id = $2) AND d.activo AND a.activo
+       AND ($3::int IS NULL OR a.deportista_id = $3)
      ORDER BY a.fecha DESC, a.id DESC
      LIMIT 1000`,
-    [usuarioId, deportistaId ? Number(deportistaId) : null],
+    [alcance.academia, alcance.coach, deportistaId ? Number(deportistaId) : null],
   );
   return rows;
 }
@@ -45,19 +46,19 @@ async function resumenDeportista(deportistaId) {
   };
 }
 
-async function obtener(usuarioId, id) {
+async function obtener(alcance, id) {
   const { rows } = await query(
     `SELECT a.*, d.codigo, d.nombre
      FROM alimentacion a JOIN deportistas d ON d.id = a.deportista_id
-     WHERE a.id = $1 AND ($2::int IS NULL OR d.usuario_id = $2) AND a.activo AND d.activo`,
-    [id, usuarioId],
+     WHERE a.id = $1 AND d.academia_id = $2 AND ($3::int IS NULL OR d.usuario_id = $3) AND a.activo AND d.activo`,
+    [id, alcance.academia, alcance.coach],
   );
   if (!rows.length) throw noEncontrado('Registro de alimentación');
   return rows[0];
 }
 
-async function crear(usuarioId, datos) {
-  const deportista = await deportistas.obtener(usuarioId, Number(datos.deportista_id));
+async function crear(alcance, datos) {
+  const deportista = await deportistas.obtener(alcance, Number(datos.deportista_id));
   const fila = { ...validar(esquema, datos) };
   fila.fecha = fila.fecha || hoyISO();
   const { rows } = await query(
@@ -68,8 +69,8 @@ async function crear(usuarioId, datos) {
   return rows[0];
 }
 
-async function actualizar(usuarioId, id, datos) {
-  const actual = await obtener(usuarioId, id);
+async function actualizar(alcance, id, datos) {
+  const actual = await obtener(alcance, id);
   const fila = { ...validar(esquema, datos) };
   fila.fecha = fila.fecha || actual.fecha;
   const { rows } = await query(
@@ -80,8 +81,8 @@ async function actualizar(usuarioId, id, datos) {
   return rows[0];
 }
 
-async function darDeBaja(usuarioId, id) {
-  await obtener(usuarioId, id);
+async function darDeBaja(alcance, id) {
+  await obtener(alcance, id);
   await query('UPDATE alimentacion SET activo = false WHERE id = $1', [id]);
 }
 

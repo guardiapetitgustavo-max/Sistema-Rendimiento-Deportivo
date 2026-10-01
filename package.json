@@ -1,6 +1,6 @@
 {
   "name": "sistema-rendimiento-deportivo",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "description": "SportEval AI: sistema web de evaluación del rendimiento deportivo con Machine Learning (Express + Supabase + Vercel)",
   "main": "src/app.js",
   "type": "commonjs",

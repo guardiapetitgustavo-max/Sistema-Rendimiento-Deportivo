@@ -1,7 +1,9 @@
 /**
- * Estado de la sesión compartido por todo el frontend: el usuario que entró y, si es
- * administrador, el coach cuyos datos está viendo (null = todos los coaches).
- * El coach elegido se envía a la API en la cabecera X-Coach (ver api.js).
+ * Estado de la sesión compartido por todo el frontend: quién entró, en qué academia está,
+ * con qué rol, qué permisos y qué módulos tiene activos. Los menús, las pantallas y los botones
+ * se adaptan a esto (la API aplica las mismas reglas, así que ocultar algo aquí es solo comodidad).
+ *
+ * El administrador puede elegir un coach en la barra superior: se envía en la cabecera X-Coach (api.js).
  */
 const CLAVE_COACH = 'sporteval-coach';
 
@@ -19,17 +21,33 @@ function leerGuardado() {
 }
 
 export const usuarioActual = () => usuario;
+export const academiaActual = () => usuario?.academia || null;
+export const rolActual = () => usuario?.rol || null;
 export const esAdmin = () => usuario?.rol === 'admin';
+export const esSuperAdmin = () => Boolean(usuario?.es_super_admin);
+export const puede = (permiso) => Boolean(usuario?.permisos?.includes(permiso));
+export const moduloActivo = (clave) => Boolean(usuario?.academia?.modulos?.[clave]);
+
+export const NOMBRE_ROL = { admin: 'Administrador', coach: 'Coach', deportista: 'Deportista', padre: 'Padre / madre' };
 
 export function fijarUsuario(nuevo) {
+  const cambioAcademia = usuario?.academia?.id !== nuevo?.academia?.id;
   usuario = nuevo;
-  if (!esAdmin()) {
+  if (!esAdmin() || cambioAcademia) {
     coaches = [];
-    coach = null;
+    if (cambioAcademia && usuario) elegirCoach(null);
   }
 }
 
-/** Coach elegido por el administrador (null = todos). Para un coach siempre es null: la API usa su propio id. */
+/** Pantalla de inicio según lo que el usuario puede hacer. */
+export function rutaInicio() {
+  if (puede('dashboard.ver')) return '/dashboard';
+  if (puede('portal.ver')) return '/portal';
+  if (esSuperAdmin() && !academiaActual()) return '/plataforma';
+  return '/cuenta';
+}
+
+/** Coach elegido por el administrador (null = toda la academia). Para los demás siempre null. */
 export const coachElegido = () => (esAdmin() ? coach : null);
 
 export function elegirCoach(id) {
@@ -44,9 +62,9 @@ export function elegirCoach(id) {
 
 export const listaCoaches = () => coaches;
 
-/** Guarda la lista de cuentas que pueden tener deportistas y descarta una elección que ya no existe. */
-export function fijarCoaches(lista) {
-  coaches = lista.filter((c) => c.activo);
+/** Guarda quiénes pueden tener deportistas (coaches y administradores activos) y descarta una elección que ya no existe. */
+export function fijarCoaches(miembros) {
+  coaches = miembros.filter((m) => m.activo && ['coach', 'admin'].includes(m.rol));
   if (coach && !coaches.some((c) => c.id === coach)) elegirCoach(null);
 }
 

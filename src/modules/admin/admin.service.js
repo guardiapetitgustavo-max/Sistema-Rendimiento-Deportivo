@@ -1,15 +1,18 @@
 /**
- * Administración de cuentas. Solo el administrador crea coaches (no hay registro público),
- * puede editarlos, desactivarlos, restablecer su contraseña, mover sus deportistas a otro
- * coach y ver estadísticas de toda la academia.
+ * Usuarios de una academia (lo gestiona su administrador). No hay registro público.
+ *
+ * Una persona (usuarios) puede pertenecer a varias academias (membresias), con un rol en cada una.
+ * Por eso, lo que es de la PERSONA (nombre, correo, contraseña) solo lo cambia el administrador si esa
+ * cuenta pertenece únicamente a su academia: así el administrador de una academia nunca puede tomar
+ * el control de una cuenta que también se usa en otra.
  */
 const bcrypt = require('bcryptjs');
 const crypto = require('node:crypto');
 const { query, transaccion } = require('../../db/pool');
 const { HttpError, noEncontrado } = require('../../utils/http-error');
 const { validar } = require('../../utils/validar');
+const { ROLES_ACADEMIA } = require('../../core/permisos');
 
-const ROLES = ['coach', 'admin'];
 const MIN_CLAVE = 6;
 
 const esquemaCuenta = {
@@ -19,10 +22,8 @@ const esquemaCuenta = {
   activo: { tipo: 'booleano', etiqueta: 'Activo' },
 };
 
-const COLUMNAS_PUBLICAS = 'id, nombre, correo, rol, activo, debe_cambiar_clave, ultimo_acceso, creado_en';
-
 function validarRol(rol) {
-  if (rol && !ROLES.includes(rol)) throw new HttpError(400, 'El rol debe ser "coach" o "admin"');
+  if (rol && !ROLES_ACADEMIA.includes(rol)) throw new HttpError(400, 'El rol debe ser administrador, coach, deportista o padre');
   return rol || 'coach';
 }
 
@@ -40,131 +41,249 @@ function claveValida(password) {
   return clave;
 }
 
-async function cuenta(id) {
-  const { rows } = await query(`SELECT ${COLUMNAS_PUBLICAS} FROM usuarios WHERE id = $1`, [id]);
+/** Miembro de la academia con los datos de su cuenta. */
+async function miembro(academia, usuarioId) {
+  const { rows } = await query(
+    `SELECT u.id, u.nombre, u.correo, u.es_super_admin, u.debe_cambiar_clave, u.ultimo_acceso, u.creado_en,
+            m.rol, m.activo,
+            (SELECT count(*)::int FROM membresias o WHERE o.usuario_id = u.id AND o.academia_id <> $1) AS otras_academias
+     FROM membresias m JOIN usuarios u ON u.id = m.usuario_id
+     WHERE m.academia_id = $1 AND m.usuario_id = $2`,
+    [academia, usuarioId],
+  );
   if (!rows.length) throw noEncontrado('Usuario');
   return rows[0];
 }
 
-/** Evita dejar el sistema sin ningún administrador activo. */
-async function protegerUltimoAdmin(id) {
-  const { rows } = await query("SELECT count(*)::int AS total FROM usuarios WHERE rol = 'admin' AND activo AND id <> $1", [id]);
-  if (!rows[0].total) throw new HttpError(400, 'Debe quedar al menos un administrador activo');
+/** ¿Puede el administrador de esta academia cambiar la identidad (nombre, correo, clave) de esta cuenta? */
+function puedeCambiarIdentidad(actor, cuenta) {
+  if (cuenta.es_super_admin && !actor.es_super_admin) return false;
+  return cuenta.otras_academias === 0 || actor.es_super_admin;
 }
 
-async function resumen() {
+/** Evita dejar la academia sin ningún administrador activo. */
+async function protegerUltimoAdmin(academia, usuarioId) {
+  const { rows } = await query(
+    "SELECT count(*)::int AS total FROM membresias WHERE academia_id = $1 AND rol = 'admin' AND activo AND usuario_id <> $2",
+    [academia, usuarioId],
+  );
+  if (!rows[0].total) throw new HttpError(400, 'La academia debe tener al menos un administrador activo');
+}
+
+async function resumen(academia) {
   const { rows } = await query(`
     SELECT
-      (SELECT count(*) FROM usuarios WHERE rol = 'coach')::int                   AS coaches,
-      (SELECT count(*) FROM usuarios WHERE rol = 'coach' AND activo)::int        AS coaches_activos,
-      (SELECT count(*) FROM usuarios WHERE rol = 'admin')::int                   AS administradores,
-      (SELECT count(*) FROM deportistas WHERE activo)::int                       AS deportistas,
+      (SELECT count(*) FROM membresias WHERE academia_id = $1 AND rol = 'coach')::int              AS coaches,
+      (SELECT count(*) FROM membresias WHERE academia_id = $1 AND rol = 'coach' AND activo)::int   AS coaches_activos,
+      (SELECT count(*) FROM membresias WHERE academia_id = $1 AND rol = 'admin')::int              AS administradores,
+      (SELECT count(*) FROM membresias WHERE academia_id = $1 AND rol = 'deportista')::int         AS cuentas_deportista,
+      (SELECT count(*) FROM membresias WHERE academia_id = $1 AND rol = 'padre')::int              AS cuentas_padre,
+      (SELECT count(*) FROM deportistas WHERE academia_id = $1 AND activo)::int                    AS deportistas,
+      (SELECT count(*) FROM deportistas WHERE academia_id = $1 AND NOT activo)::int                AS deportistas_inactivos,
       (SELECT count(*) FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id
-        WHERE e.activa AND d.activo)::int                                        AS evaluaciones,
+        WHERE d.academia_id = $1 AND e.activa AND d.activo)::int                                   AS evaluaciones,
       (SELECT count(*) FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id
-        WHERE e.activa AND d.activo AND e.fecha >= current_date - 30)::int       AS evaluaciones_30_dias,
-      (SELECT round(avg(e.puntuacion_general)::numeric, 1) FROM evaluaciones e
-        JOIN deportistas d ON d.id = e.deportista_id WHERE e.activa AND d.activo)::float AS promedio_general,
-      (SELECT count(*) FROM usuarios WHERE ultimo_acceso >= now() - interval '7 days')::int AS activos_7_dias`);
+        WHERE d.academia_id = $1 AND e.activa AND d.activo AND e.fecha >= current_date - 30)::int  AS evaluaciones_30_dias,
+      (SELECT round(avg(e.puntuacion_general)::numeric, 1) FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id
+        WHERE d.academia_id = $1 AND e.activa AND d.activo)::float                                 AS promedio_general,
+      (SELECT count(*) FROM membresias m JOIN usuarios u ON u.id = m.usuario_id
+        WHERE m.academia_id = $1 AND u.ultimo_acceso >= now() - interval '7 days')::int            AS activos_7_dias`,
+  [academia]);
   return rows[0];
 }
 
-/** Todas las cuentas con la actividad de cada una. */
-async function listar() {
+/** Todos los miembros de la academia con su actividad y sus vínculos (deportista / hijos). */
+async function listar(academia) {
   const { rows } = await query(`
-    SELECT u.id, u.nombre, u.correo, u.rol, u.activo, u.debe_cambiar_clave, u.ultimo_acceso, u.creado_en,
-           count(DISTINCT d.id) FILTER (WHERE d.activo)::int                   AS deportistas,
-           count(e.id) FILTER (WHERE e.activa AND d.activo)::int               AS evaluaciones,
-           max(e.fecha) FILTER (WHERE e.activa AND d.activo)                   AS ultima_evaluacion,
-           round(avg(e.puntuacion_general) FILTER (WHERE e.activa AND d.activo)::numeric, 1)::float AS promedio
-    FROM usuarios u
-    LEFT JOIN deportistas d  ON d.usuario_id = u.id
-    LEFT JOIN evaluaciones e ON e.deportista_id = d.id
-    GROUP BY u.id
-    ORDER BY u.rol, u.activo DESC, u.nombre`);
+    SELECT u.id, u.nombre, u.correo, u.es_super_admin, u.debe_cambiar_clave, u.ultimo_acceso, u.creado_en,
+           m.rol, m.activo,
+           (SELECT count(*)::int FROM membresias o WHERE o.usuario_id = u.id AND o.academia_id <> $1) AS otras_academias,
+           (SELECT count(*)::int FROM deportistas d WHERE d.academia_id = $1 AND d.usuario_id = u.id AND d.activo) AS deportistas,
+           (SELECT count(e.id)::int FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id
+             WHERE d.academia_id = $1 AND d.usuario_id = u.id AND e.activa AND d.activo) AS evaluaciones,
+           (SELECT max(e.fecha) FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id
+             WHERE d.academia_id = $1 AND d.usuario_id = u.id AND e.activa AND d.activo) AS ultima_evaluacion,
+           (SELECT round(avg(e.puntuacion_general)::numeric, 1)::float FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id
+             WHERE d.academia_id = $1 AND d.usuario_id = u.id AND e.activa AND d.activo) AS promedio,
+           CASE m.rol
+             WHEN 'deportista' THEN (SELECT coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'nombre', d.nombre, 'codigo', d.codigo)), '[]')
+                                     FROM deportistas d WHERE d.academia_id = $1 AND d.cuenta_id = u.id)
+             WHEN 'padre' THEN (SELECT coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'nombre', d.nombre, 'codigo', d.codigo)), '[]')
+                                FROM tutores t JOIN deportistas d ON d.id = t.deportista_id
+                                WHERE d.academia_id = $1 AND t.usuario_id = u.id)
+             ELSE '[]'::jsonb
+           END AS vinculos
+    FROM membresias m JOIN usuarios u ON u.id = m.usuario_id
+    WHERE m.academia_id = $1
+    ORDER BY array_position(ARRAY['admin', 'coach', 'deportista', 'padre'], m.rol), m.activo DESC, u.nombre`,
+  [academia]);
   return rows;
 }
 
-/** Crea una cuenta. Si no se indica contraseña se genera una temporal y se devuelve una sola vez. */
-async function crear(datos) {
-  const d = validar(esquemaCuenta, datos);
-  const rol = validarRol(d.rol);
-  const clave = claveValida(datos.password);
-  const { rows } = await query(
-    `INSERT INTO usuarios (nombre, correo, password_hash, rol, debe_cambiar_clave)
-     VALUES ($1, $2, $3, $4, true)
-     ON CONFLICT (correo) DO NOTHING
-     RETURNING ${COLUMNAS_PUBLICAS}`,
-    [d.nombre, d.correo, await bcrypt.hash(clave, 10), rol],
+/**
+ * Vincula una cuenta de deportista con su ficha (una) o una cuenta de padre con sus hijos (varias).
+ * Solo fichas de ESTA academia.
+ */
+async function vincular(cliente, academia, cuenta, ids = []) {
+  const lista = [...new Set((Array.isArray(ids) ? ids : [ids]).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (cuenta.rol === 'deportista' && lista.length > 1) throw new HttpError(400, 'Una cuenta de deportista se vincula con una sola ficha');
+  if (lista.length) {
+    const { rows } = await cliente.query('SELECT id FROM deportistas WHERE academia_id = $1 AND id = ANY($2::int[])', [academia, lista]);
+    if (rows.length !== lista.length) throw new HttpError(400, 'Alguna ficha de deportista no existe en esta academia');
+  }
+
+  // Limpia vínculos anteriores de esta cuenta en esta academia
+  await cliente.query('UPDATE deportistas SET cuenta_id = NULL WHERE academia_id = $1 AND cuenta_id = $2', [academia, cuenta.id]);
+  await cliente.query(
+    'DELETE FROM tutores t USING deportistas d WHERE d.id = t.deportista_id AND d.academia_id = $1 AND t.usuario_id = $2',
+    [academia, cuenta.id],
   );
-  if (!rows.length) throw new HttpError(409, 'Ya existe una cuenta con ese correo');
-  return { ...rows[0], clave_temporal: clave };
+  if (!lista.length) return;
+
+  if (cuenta.rol === 'deportista') {
+    const { rows } = await cliente.query('SELECT cuenta_id FROM deportistas WHERE id = $1', [lista[0]]);
+    if (rows[0].cuenta_id && rows[0].cuenta_id !== cuenta.id) throw new HttpError(409, 'Esa ficha ya está vinculada a otra cuenta de deportista');
+    await cliente.query('UPDATE deportistas SET cuenta_id = $2 WHERE id = $1', [lista[0], cuenta.id]);
+  } else if (cuenta.rol === 'padre') {
+    await cliente.query(
+      'INSERT INTO tutores (usuario_id, deportista_id) SELECT $1, unnest($2::int[]) ON CONFLICT DO NOTHING',
+      [cuenta.id, lista],
+    );
+  } else {
+    throw new HttpError(400, 'Solo las cuentas de deportista o de padre se vinculan con fichas');
+  }
 }
 
-async function actualizar(actor, id, datos) {
-  const actual = await cuenta(id);
+/**
+ * Crea un miembro. Si el correo ya tiene cuenta (en otra academia), solo se le da acceso a esta
+ * academia con su contraseña de siempre; si es nuevo, se genera una contraseña temporal.
+ */
+async function crear(academia, datos) {
+  const d = validar(esquemaCuenta, datos);
+  const rol = validarRol(d.rol);
+
+  return transaccion(async (cliente) => {
+    const { rows: existentes } = await cliente.query('SELECT id FROM usuarios WHERE correo = $1', [d.correo]);
+    let usuarioId = existentes[0]?.id;
+    let clave = null;
+
+    if (usuarioId) {
+      const { rows: yaMiembro } = await cliente.query('SELECT 1 FROM membresias WHERE usuario_id = $1 AND academia_id = $2', [usuarioId, academia]);
+      if (yaMiembro.length) throw new HttpError(409, 'Esa persona ya pertenece a esta academia');
+    } else {
+      clave = claveValida(datos.password);
+      const { rows } = await cliente.query(
+        `INSERT INTO usuarios (nombre, correo, password_hash, debe_cambiar_clave) VALUES ($1, $2, $3, true) RETURNING id`,
+        [d.nombre, d.correo, await bcrypt.hash(clave, 10)],
+      );
+      usuarioId = rows[0].id;
+    }
+
+    await cliente.query('INSERT INTO membresias (usuario_id, academia_id, rol) VALUES ($1, $2, $3)', [usuarioId, academia, rol]);
+    if (['deportista', 'padre'].includes(rol) && datos.deportistas) {
+      await vincular(cliente, academia, { id: usuarioId, rol }, datos.deportistas);
+    }
+    const { rows } = await cliente.query(
+      `SELECT u.id, u.nombre, u.correo, u.debe_cambiar_clave, m.rol, m.activo
+       FROM usuarios u JOIN membresias m ON m.usuario_id = u.id AND m.academia_id = $2 WHERE u.id = $1`,
+      [usuarioId, academia],
+    );
+    return { ...rows[0], cuenta_existente: !clave, clave_temporal: clave };
+  });
+}
+
+async function actualizar(actor, academia, id, datos) {
+  const actual = await miembro(academia, id);
   const d = validar(esquemaCuenta, { ...actual, ...datos });
   const rol = validarRol(d.rol);
   const activo = datos.activo === undefined ? actual.activo : d.activo;
 
   if (id === actor.id && (rol !== actual.rol || !activo)) {
-    throw new HttpError(400, 'No puedes quitarte el rol de administrador ni desactivar tu propia cuenta');
+    throw new HttpError(400, 'No puedes cambiar tu propio rol ni desactivar tu propio acceso');
   }
-  if (actual.rol === 'admin' && actual.activo && (rol !== 'admin' || !activo)) await protegerUltimoAdmin(id);
+  if (actual.rol === 'admin' && actual.activo && (rol !== 'admin' || !activo)) await protegerUltimoAdmin(academia, id);
+  const cambiaIdentidad = d.nombre !== actual.nombre || d.correo !== actual.correo;
+  if (cambiaIdentidad && !puedeCambiarIdentidad(actor, actual)) {
+    throw new HttpError(403, 'Esta cuenta también se usa en otra academia: su nombre y correo solo los cambia la propia persona o el super administrador');
+  }
 
-  const { rows } = await query(
-    `UPDATE usuarios SET nombre = $2, correo = $3, rol = $4, activo = $5 WHERE id = $1
-     RETURNING ${COLUMNAS_PUBLICAS}`,
-    [id, d.nombre, d.correo, rol, activo],
+  return transaccion(async (cliente) => {
+    if (cambiaIdentidad) {
+      await cliente.query('UPDATE usuarios SET nombre = $2, correo = $3 WHERE id = $1', [id, d.nombre, d.correo]);
+    }
+    await cliente.query('UPDATE membresias SET rol = $3, activo = $4 WHERE usuario_id = $1 AND academia_id = $2', [id, academia, rol, activo]);
+    if (rol !== actual.rol) await vincular(cliente, academia, { id, rol: 'otro' }, []); // al cambiar de rol se limpian los vínculos
+    if (['deportista', 'padre'].includes(rol) && datos.deportistas !== undefined) {
+      await vincular(cliente, academia, { id, rol }, datos.deportistas);
+    }
+    return { ...(await miembroCon(cliente, academia, id)) };
+  });
+}
+
+async function miembroCon(cliente, academia, id) {
+  const { rows } = await cliente.query(
+    `SELECT u.id, u.nombre, u.correo, u.debe_cambiar_clave, m.rol, m.activo
+     FROM usuarios u JOIN membresias m ON m.usuario_id = u.id AND m.academia_id = $2 WHERE u.id = $1`,
+    [id, academia],
   );
   return rows[0];
 }
 
 /** Pone una contraseña nueva (o una temporal generada) y obliga a cambiarla al entrar. */
-async function restablecerClave(actor, id, datos = {}) {
+async function restablecerClave(actor, academia, id, datos = {}) {
   if (id === actor.id) throw new HttpError(400, 'Para cambiar tu propia contraseña usa "Mi cuenta"');
-  const usuario = await cuenta(id);
+  const cuenta = await miembro(academia, id);
+  if (!puedeCambiarIdentidad(actor, cuenta)) {
+    throw new HttpError(403, 'Esta cuenta también se usa en otra academia: su contraseña solo la cambia la propia persona o el super administrador');
+  }
   const clave = claveValida(datos.password);
   await query('UPDATE usuarios SET password_hash = $2, debe_cambiar_clave = true WHERE id = $1', [id, await bcrypt.hash(clave, 10)]);
-  await query('DELETE FROM intentos_login WHERE clave LIKE $1', [`%::${usuario.correo}`]);
+  await query('DELETE FROM intentos_login WHERE clave LIKE $1', [`%::${cuenta.correo}`]);
   return { clave_temporal: clave };
 }
 
-/** Pasa todos los deportistas (con su historial) de un coach a otro. */
-async function transferir(id, datos = {}) {
+/** Pasa todos los deportistas (con su historial) de un coach a otro de la misma academia. */
+async function transferir(academia, id, datos = {}) {
   const destino = Number(datos.destino_id);
   if (!Number.isInteger(destino) || destino === id) throw new HttpError(400, 'Elige un coach de destino distinto');
-  await cuenta(id);
-  const receptor = await cuenta(destino);
-  if (!receptor.activo) throw new HttpError(400, 'El coach de destino está desactivado');
-
+  await miembro(academia, id);
+  const receptor = await miembro(academia, destino);
+  if (!receptor.activo || !['coach', 'admin'].includes(receptor.rol)) {
+    throw new HttpError(400, 'El destino debe ser un coach o administrador activo de la academia');
+  }
   return transaccion(async (cliente) => {
-    const { rows: choques } = await cliente.query(
-      `SELECT o.codigo FROM deportistas o JOIN deportistas d ON d.codigo = o.codigo
-       WHERE o.usuario_id = $1 AND d.usuario_id = $2`,
-      [id, destino],
+    const { rowCount } = await cliente.query(
+      'UPDATE deportistas SET usuario_id = $3 WHERE academia_id = $1 AND usuario_id = $2',
+      [academia, id, destino],
     );
-    if (choques.length) {
-      throw new HttpError(409, `El coach de destino ya tiene deportistas con estos códigos: ${choques.map((c) => c.codigo).slice(0, 10).join(', ')}`);
-    }
-    const { rowCount } = await cliente.query('UPDATE deportistas SET usuario_id = $2 WHERE usuario_id = $1', [id, destino]);
-    await cliente.query('DELETE FROM modelos_ml WHERE usuario_id = $1', [id]);
+    await cliente.query('DELETE FROM modelos_ml WHERE academia_id = $1 AND usuario_id = $2', [academia, id]);
     return { deportistas_transferidos: rowCount, destino: receptor.nombre };
   });
 }
 
-/** Elimina una cuenta sin deportistas. Con datos, primero hay que transferirlos o desactivar la cuenta. */
-async function eliminar(actor, id) {
-  if (id === actor.id) throw new HttpError(400, 'No puedes eliminar tu propia cuenta');
-  const usuario = await cuenta(id);
-  const { rows } = await query('SELECT count(*)::int AS total FROM deportistas WHERE usuario_id = $1', [id]);
+/**
+ * Quita a la persona de la academia. Si era coach con deportistas, primero hay que transferirlos.
+ * Si no pertenece a ninguna otra academia (y no es super admin), su cuenta se elimina.
+ */
+async function eliminar(actor, academia, id) {
+  if (id === actor.id) throw new HttpError(400, 'No puedes quitarte de la academia a ti mismo');
+  const cuenta = await miembro(academia, id);
+  const { rows } = await query('SELECT count(*)::int AS total FROM deportistas WHERE academia_id = $1 AND usuario_id = $2', [academia, id]);
   if (rows[0].total) {
-    throw new HttpError(409, `Esta cuenta tiene ${rows[0].total} deportista(s). Transfiérelos a otro coach o desactiva la cuenta.`);
+    throw new HttpError(409, `Esta cuenta tiene ${rows[0].total} deportista(s) a su cargo. Transfiérelos a otro coach o desactiva la cuenta.`);
   }
-  if (usuario.rol === 'admin' && usuario.activo) await protegerUltimoAdmin(id);
-  await query('DELETE FROM usuarios WHERE id = $1', [id]);
+  if (cuenta.rol === 'admin' && cuenta.activo) await protegerUltimoAdmin(academia, id);
+
+  await transaccion(async (cliente) => {
+    await vincular(cliente, academia, { id, rol: 'otro' }, []);
+    await cliente.query('DELETE FROM modelos_ml WHERE academia_id = $1 AND usuario_id = $2', [academia, id]);
+    await cliente.query('DELETE FROM membresias WHERE academia_id = $1 AND usuario_id = $2', [academia, id]);
+    if (cuenta.otras_academias === 0 && !cuenta.es_super_admin) {
+      await cliente.query('DELETE FROM usuarios WHERE id = $1', [id]);
+    }
+  });
 }
 
 module.exports = {
-  ROLES, resumen, listar, crear, actualizar, restablecerClave, transferir, eliminar,
+  resumen, listar, crear, actualizar, restablecerClave, transferir, eliminar,
 };

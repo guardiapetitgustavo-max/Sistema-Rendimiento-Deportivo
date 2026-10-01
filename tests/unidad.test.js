@@ -231,3 +231,42 @@ describe('manejo de errores', () => {
     assert.equal(responder(new HttpError(404, 'No existe')).codigo, 404);
   });
 });
+
+describe('permisos, módulos y auditoría (FASE 1)', () => {
+  const permisos = require('../src/core/permisos');
+  const modulos = require('../src/core/modulos');
+  const { describirRuta } = require('../src/core/auditoria');
+
+  test('el administrador tiene todos los permisos', () => {
+    assert.equal(permisos.efectivos('admin').length, permisos.PERMISOS.filter((p) => !p.sinAdmin).length);
+    assert.ok(!permisos.efectivos('admin').includes('portal.ver'));
+  });
+
+  test('valores por defecto y excepciones por academia', () => {
+    assert.ok(permisos.efectivos('coach').includes('evaluaciones.gestionar'));
+    assert.ok(!permisos.efectivos('coach').includes('usuarios.gestionar'));
+    assert.ok(!permisos.efectivos('coach', { 'evaluaciones.gestionar': false }).includes('evaluaciones.gestionar'));
+    assert.deepEqual(permisos.efectivos('deportista'), ['portal.ver']);
+    assert.deepEqual(permisos.efectivos('desconocido'), []);
+  });
+
+  test('nunca se conceden permisos de solo administrador ni de escritura al deportista', () => {
+    assert.ok(!permisos.configurable('usuarios.gestionar', 'coach'));
+    assert.ok(!permisos.configurable('evaluaciones.gestionar', 'deportista'));
+    assert.ok(!permisos.efectivos('coach', { 'usuarios.gestionar': true }).includes('usuarios.gestionar'));
+    assert.ok(!permisos.efectivos('padre', { 'evaluaciones.gestionar': true }).includes('evaluaciones.gestionar'));
+  });
+
+  test('los módulos no disponibles siempre están apagados', () => {
+    const estado = modulos.efectivos({ nutricion: false, video: true });
+    assert.equal(estado.nutricion, false);
+    assert.equal(estado.video, false);
+    assert.equal(estado.ml, true);
+  });
+
+  test('describe la ruta auditada', () => {
+    assert.deepEqual(describirRuta('/deportistas/12'), { entidad: 'deportistas', entidadId: '12', subruta: null });
+    assert.deepEqual(describirRuta('/admin/usuarios/5/password'), { entidad: 'usuarios', entidadId: '5', subruta: 'password' });
+    assert.deepEqual(describirRuta('/ml/entrenar'), { entidad: 'ml', entidadId: null, subruta: 'entrenar' });
+  });
+});

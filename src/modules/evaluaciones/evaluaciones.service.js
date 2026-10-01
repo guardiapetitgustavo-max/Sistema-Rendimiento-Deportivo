@@ -64,13 +64,13 @@ async function insertarVarias(db, elementos) {
   return insertadas;
 }
 
-async function listar(usuarioId, filtros = {}) {
-  const valores = [usuarioId];
+async function listar(alcance, filtros = {}) {
+  const valores = [alcance.academia, alcance.coach];
   const param = (valor) => {
     valores.push(valor);
     return `$${valores.length}`;
   };
-  const condiciones = ['($1::int IS NULL OR d.usuario_id = $1)', 'd.activo', 'e.activa'];
+  const condiciones = ['d.academia_id = $1', '($2::int IS NULL OR d.usuario_id = $2)', 'd.activo', 'e.activa'];
 
   if (filtros.q) {
     const p = param(filtros.q);
@@ -92,25 +92,25 @@ async function listar(usuarioId, filtros = {}) {
   return rows;
 }
 
-async function obtener(usuarioId, id) {
+async function obtener(alcance, id) {
   const { rows } = await query(
     `SELECT e.*, d.codigo, d.nombre, d.categoria, d.disciplina
      FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id
-     WHERE e.id = $1 AND ($2::int IS NULL OR d.usuario_id = $2) AND e.activa AND d.activo`,
-    [id, usuarioId],
+     WHERE e.id = $1 AND d.academia_id = $2 AND ($3::int IS NULL OR d.usuario_id = $3) AND e.activa AND d.activo`,
+    [id, alcance.academia, alcance.coach],
   );
   if (!rows.length) throw noEncontrado('Evaluación');
   return rows[0];
 }
 
-async function crear(usuarioId, datos) {
-  const deportista = await deportistas.obtener(usuarioId, Number(datos.deportista_id));
+async function crear(alcance, datos) {
+  const deportista = await deportistas.obtener(alcance, Number(datos.deportista_id));
   const [evaluacion] = await insertarVarias(pool, [{ deportistaId: deportista.id, datos: validar(esquema, datos), origen: 'manual' }]);
   return evaluacion;
 }
 
-async function actualizar(usuarioId, id, datos) {
-  const actual = await obtener(usuarioId, id);
+async function actualizar(alcance, id, datos) {
+  const actual = await obtener(alcance, id);
   const limpio = validar(esquema, datos);
   const fila = completar({ ...limpio, fecha: limpio.fecha || actual.fecha });
   const { rows } = await query(
@@ -122,8 +122,8 @@ async function actualizar(usuarioId, id, datos) {
 }
 
 /** Baja lógica: el dato se conserva para no perder la evolución del deportista. */
-async function darDeBaja(usuarioId, id) {
-  await obtener(usuarioId, id);
+async function darDeBaja(alcance, id) {
+  await obtener(alcance, id);
   await query('UPDATE evaluaciones SET activa = false WHERE id = $1', [id]);
 }
 

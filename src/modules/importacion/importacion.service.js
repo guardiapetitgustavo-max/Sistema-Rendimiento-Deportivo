@@ -68,7 +68,8 @@ async function previsualizar(buffer) {
  * existentes, reactiva a los dados de baja que reaparecen y, si se pide, da de
  * baja a los que no están en el archivo (conservando su historial).
  */
-async function importar(usuarioId, { registros, baja_ausentes: bajaAusentes = false } = {}) {
+async function importar(alcance, { registros, baja_ausentes: bajaAusentes = false } = {}) {
+  const { academia, coach } = alcance; // coach concreto (obligatorio): dueño de los deportistas importados
   if (!Array.isArray(registros) || !registros.length) throw solicitudInvalida('No hay registros para importar');
   if (registros.length > MAX_REGISTROS) throw solicitudInvalida(`Máximo ${MAX_REGISTROS} registros por importación`);
 
@@ -83,24 +84,30 @@ async function importar(usuarioId, { registros, baja_ausentes: bajaAusentes = fa
 
   return transaccion(async (cliente) => {
     const { rows: previos } = await cliente.query(
-      'SELECT codigo, activo FROM deportistas WHERE usuario_id = $1 AND codigo = ANY($2::text[])',
-      [usuarioId, [...porCodigo.keys()]],
+      'SELECT codigo, activo, usuario_id FROM deportistas WHERE academia_id = $1 AND codigo = ANY($2::text[])',
+      [academia, [...porCodigo.keys()]],
     );
+    // Un código activo de otro coach no se toma: evitaría "robar" deportistas ajenos
+    const ajenos = previos.filter((p) => p.activo && p.usuario_id !== coach).map((p) => p.codigo);
+    if (ajenos.length) {
+      throw new HttpError(409, `Estos códigos ya pertenecen a deportistas de otro coach de la academia: ${ajenos.slice(0, 10).join(', ')}`);
+    }
     const estadoPrevio = new Map(previos.map((p) => [p.codigo, p.activo]));
 
     const ids = new Map();
     for (const r of porCodigo.values()) {
       const { rows } = await cliente.query(
-        `INSERT INTO deportistas (usuario_id, codigo, nombre, edad, categoria, disciplina)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (usuario_id, codigo) DO UPDATE SET
+        `INSERT INTO deportistas (academia_id, usuario_id, codigo, nombre, edad, categoria, disciplina)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (academia_id, codigo) DO UPDATE SET
+           usuario_id = EXCLUDED.usuario_id,
            nombre = EXCLUDED.nombre,
            edad = COALESCE(EXCLUDED.edad, deportistas.edad),
            categoria = COALESCE(EXCLUDED.categoria, deportistas.categoria),
            disciplina = COALESCE(EXCLUDED.disciplina, deportistas.disciplina),
            activo = true
          RETURNING id`,
-        [usuarioId, r.codigo, r.nombre, r.edad, r.categoria, r.disciplina],
+        [academia, coach, r.codigo, r.nombre, r.edad, r.categoria, r.disciplina],
       );
       ids.set(r.codigo, rows[0].id);
     }
@@ -113,8 +120,8 @@ async function importar(usuarioId, { registros, baja_ausentes: bajaAusentes = fa
     if (bajaAusentes === true) {
       const { rowCount } = await cliente.query(
         `UPDATE deportistas SET activo = false
-         WHERE usuario_id = $1 AND activo AND NOT (codigo = ANY($2::text[]))`,
-        [usuarioId, [...porCodigo.keys()]],
+         WHERE academia_id = $1 AND usuario_id = $2 AND activo AND NOT (codigo = ANY($3::text[]))`,
+        [academia, coach, [...porCodigo.keys()]],
       );
       dadosDeBaja = rowCount;
     }

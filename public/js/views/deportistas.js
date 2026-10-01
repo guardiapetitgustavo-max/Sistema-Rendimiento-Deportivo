@@ -5,7 +5,9 @@ import {
   modalFormulario, datosFormulario, tablaPaginada, iniciales,
 } from '../ui.js';
 import { ir, recargarVista } from '../navegacion.js';
-import { esAdmin, coachElegido, listaCoaches } from '../sesion.js';
+import {
+  esAdmin, coachElegido, listaCoaches, puede,
+} from '../sesion.js';
 
 const texto = (valor) => valor ?? '';
 
@@ -84,11 +86,12 @@ export async function render(vista, { query }) {
   const recargar = recargarVista;
   const lista = (valores) => valores.map((v) => ({ valor: v, texto: v }));
   const verCoach = esAdmin() && !coachElegido(); // el admin ve a todos: se indica de quién es cada uno
+  const gestionar = puede('deportistas.gestionar');
 
   montar(vista, html`
     ${encabezado('people', 'Deportistas', 'Registra deportistas y consulta su perfil de rendimiento', html`
-      <a class="btn btn-light" href="#/importar"><i class="bi bi-cloud-arrow-up me-1"></i>Importar Excel</a>
-      <button class="btn btn-primary" data-accion="nuevo"><i class="bi bi-person-plus me-1"></i>Nuevo deportista</button>`)}
+      ${puede('importacion.usar') ? html`<a class="btn btn-light" href="#/importar"><i class="bi bi-cloud-arrow-up me-1"></i>Importar Excel</a>` : ''}
+      ${gestionar ? html`<button class="btn btn-primary" data-accion="nuevo"><i class="bi bi-person-plus me-1"></i>Nuevo deportista</button>` : ''}`)}
 
     <div class="card mb-3"><div class="card-body">
       <form class="row g-2 align-items-end" data-filtros>
@@ -131,9 +134,9 @@ export async function render(vista, { query }) {
       <td class="text-center">${insigniaPuntaje(d.promedio_general)}</td>
       <td>${insigniaNivel(d.nivel)}</td>
       <td class="text-end text-nowrap">
-        <a class="btn btn-sm btn-light" href="#/evaluaciones/nueva?deportista=${d.id}" title="Registrar evaluación" aria-label="Registrar evaluación"><i class="bi bi-clipboard-plus"></i></a>
-        <button class="btn btn-sm btn-light" data-accion="editar" data-id="${d.id}" title="Editar" aria-label="Editar"><i class="bi bi-pencil"></i></button>
-        <button class="btn btn-sm btn-light text-danger" data-accion="baja" data-id="${d.id}" title="Dar de baja" aria-label="Dar de baja"><i class="bi bi-person-dash"></i></button>
+        ${puede('evaluaciones.gestionar') ? html`<a class="btn btn-sm btn-light" href="#/evaluaciones/nueva?deportista=${d.id}" title="Registrar evaluación" aria-label="Registrar evaluación"><i class="bi bi-clipboard-plus"></i></a>` : ''}
+        ${gestionar ? html`<button class="btn btn-sm btn-light" data-accion="editar" data-id="${d.id}" title="Editar" aria-label="Editar"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-sm btn-light text-danger" data-accion="baja" data-id="${d.id}" title="Dar de baja" aria-label="Dar de baja"><i class="bi bi-person-dash"></i></button>` : ''}
       </td>
     </tr>`, { columnas: verCoach ? 9 : 8, mensajeVacio: filtros.q || filtros.categoria || filtros.disciplina ? 'No hay deportistas que coincidan con los filtros' : 'Aún no tienes deportistas. Registra el primero o importa un Excel.', icono: 'people' });
 

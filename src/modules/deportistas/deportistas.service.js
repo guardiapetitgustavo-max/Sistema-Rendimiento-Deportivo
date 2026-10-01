@@ -16,14 +16,15 @@ const { codigo, ...esquemaEdicion } = esquema; // el código no se edita
  * Carga los deportistas activos con sus evaluaciones activas (orden cronológico)
  * y el resumen calculado de cada uno. Es la base de dashboard, alertas, reportes, IA y ML.
  *
- * `usuarioId` es el alcance: el id de un coach, o null para todos (solo administrador).
+ * `alcance` = { academia, coach }: siempre dentro de UNA academia; coach null = toda la academia.
  */
-async function cargarAcademia(usuarioId, { deportistaId = null } = {}) {
+async function cargarAcademia(alcance, { deportistaId = null } = {}) {
   const { rows: deportistas } = await query(
     `SELECT d.*, u.nombre AS coach FROM deportistas d JOIN usuarios u ON u.id = d.usuario_id
-     WHERE ($1::int IS NULL OR d.usuario_id = $1) AND d.activo AND ($2::int IS NULL OR d.id = $2)
+     WHERE d.academia_id = $1 AND ($2::int IS NULL OR d.usuario_id = $2) AND d.activo
+       AND ($3::int IS NULL OR d.id = $3)
      ORDER BY d.nombre`,
-    [usuarioId, deportistaId],
+    [alcance.academia, alcance.coach, deportistaId],
   );
   if (!deportistas.length) return [];
 
@@ -40,16 +41,16 @@ async function cargarAcademia(usuarioId, { deportistaId = null } = {}) {
   return deportistas.map((d) => resumirDeportista({ ...d, evaluaciones: porDeportista.get(d.id) }));
 }
 
-async function cargarDeportista(usuarioId, id) {
-  const [deportista] = await cargarAcademia(usuarioId, { deportistaId: id });
+async function cargarDeportista(alcance, id) {
+  const [deportista] = await cargarAcademia(alcance, { deportistaId: id });
   if (!deportista) throw noEncontrado('Deportista');
   return deportista;
 }
 
 const normalizar = (texto) => (texto || '').trim().toLowerCase();
 
-async function listar(usuarioId, { q = '', categoria = '', disciplina = '' } = {}) {
-  const academia = await cargarAcademia(usuarioId);
+async function listar(alcance, { q = '', categoria = '', disciplina = '' } = {}) {
+  const academia = await cargarAcademia(alcance);
   const buscar = normalizar(q);
 
   const datos = academia
@@ -62,11 +63,11 @@ async function listar(usuarioId, { q = '', categoria = '', disciplina = '' } = {
   return { datos, categorias: unicos('categoria'), disciplinas: unicos('disciplina') };
 }
 
-/** Deportista activo dentro del alcance (protege contra acceso a datos de otro coach). */
-async function obtener(usuarioId, id) {
+/** Deportista activo dentro del alcance (protege contra acceso a datos de otra academia u otro coach). */
+async function obtener(alcance, id) {
   const { rows } = await query(
-    'SELECT * FROM deportistas WHERE id = $1 AND ($2::int IS NULL OR usuario_id = $2) AND activo',
-    [id, usuarioId],
+    'SELECT * FROM deportistas WHERE id = $1 AND academia_id = $2 AND ($3::int IS NULL OR usuario_id = $3) AND activo',
+    [id, alcance.academia, alcance.coach],
   );
   if (!rows.length) throw noEncontrado('Deportista');
   return rows[0];
@@ -76,52 +77,58 @@ async function obtener(usuarioId, id) {
  * Coach dueño de un deportista. Un coach siempre es el dueño de lo que crea; el
  * administrador puede indicar `coach_id` (obligatorio si está viendo a todos los coaches).
  */
-async function coachDestino(usuarioId, datos, actor, { requerido = true } = {}) {
+async function coachDestino(alcance, datos, actor, { requerido = true } = {}) {
   const pedido = actor?.rol === 'admin' && datos.coach_id ? Number(datos.coach_id) : null;
-  const coachId = pedido || usuarioId;
+  const coachId = pedido || alcance.coach;
   if (!coachId) {
     if (!requerido) return null;
     throw new HttpError(400, 'Elige el coach al que pertenece el deportista');
   }
   if (pedido) {
-    const { rows } = await query('SELECT id FROM usuarios WHERE id = $1 AND activo', [pedido]);
-    if (!rows.length) throw new HttpError(400, 'El coach elegido no existe o está desactivado');
+    // El coach debe pertenecer a ESTA academia (nunca se asigna a alguien de otra)
+    const { rows } = await query(
+      `SELECT 1 FROM membresias m JOIN usuarios u ON u.id = m.usuario_id
+       WHERE m.usuario_id = $1 AND m.academia_id = $2 AND m.rol IN ('coach', 'admin') AND m.activo AND u.activo`,
+      [pedido, alcance.academia],
+    );
+    if (!rows.length) throw new HttpError(400, 'El coach elegido no pertenece a la academia o está desactivado');
   }
   return coachId;
 }
 
-async function crear(usuarioId, datos, actor) {
+async function crear(alcance, datos, actor) {
   const d = validar(esquema, datos);
-  const coachId = await coachDestino(usuarioId, datos, actor);
+  const coachId = await coachDestino(alcance, datos, actor);
+  // El código es único en toda la academia
   const { rows: existentes } = await query(
-    'SELECT id, activo FROM deportistas WHERE usuario_id = $1 AND codigo = $2',
-    [coachId, d.codigo],
+    'SELECT id, activo, usuario_id FROM deportistas WHERE academia_id = $1 AND codigo = $2',
+    [alcance.academia, d.codigo],
   );
-  if (existentes[0]?.activo) throw new HttpError(409, `Ya existe un deportista con el código "${d.codigo}"`);
+  if (existentes[0]?.activo) throw new HttpError(409, `Ya existe un deportista con el código "${d.codigo}" en la academia`);
 
   if (existentes[0]) {
-    // Estaba dado de baja: se reactiva conservando todo su historial
+    // Estaba dado de baja: se reactiva conservando todo su historial (con el coach que lo registra)
     const { rows } = await query(
-      `UPDATE deportistas SET nombre = $2, edad = $3, categoria = $4, disciplina = $5, activo = true
+      `UPDATE deportistas SET nombre = $2, edad = $3, categoria = $4, disciplina = $5, usuario_id = $6, activo = true
        WHERE id = $1 RETURNING *`,
-      [existentes[0].id, d.nombre, d.edad, d.categoria, d.disciplina],
+      [existentes[0].id, d.nombre, d.edad, d.categoria, d.disciplina, coachId],
     );
     return { ...rows[0], reactivado: true };
   }
 
   const { rows } = await query(
-    `INSERT INTO deportistas (usuario_id, codigo, nombre, edad, categoria, disciplina)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [coachId, d.codigo, d.nombre, d.edad, d.categoria, d.disciplina],
+    `INSERT INTO deportistas (academia_id, usuario_id, codigo, nombre, edad, categoria, disciplina)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [alcance.academia, coachId, d.codigo, d.nombre, d.edad, d.categoria, d.disciplina],
   );
   return rows[0];
 }
 
-async function actualizar(usuarioId, id, datos, actor) {
-  const actual = await obtener(usuarioId, id);
+async function actualizar(alcance, id, datos, actor) {
+  const actual = await obtener(alcance, id);
   const d = validar(esquemaEdicion, datos);
-  // Solo el administrador puede pasar un deportista a otro coach
-  const coachId = (await coachDestino(null, datos, actor, { requerido: false })) || actual.usuario_id;
+  // Solo el administrador puede pasar un deportista a otro coach de la academia
+  const coachId = (await coachDestino({ ...alcance, coach: null }, datos, actor, { requerido: false })) || actual.usuario_id;
   const { rows } = await query(
     `UPDATE deportistas SET nombre = $2, edad = $3, categoria = $4, disciplina = $5, usuario_id = $6
      WHERE id = $1 RETURNING *`,
@@ -131,8 +138,8 @@ async function actualizar(usuarioId, id, datos, actor) {
 }
 
 /** Baja lógica: deja de mostrarse pero conserva su historial. */
-async function darDeBaja(usuarioId, id) {
-  await obtener(usuarioId, id);
+async function darDeBaja(alcance, id) {
+  await obtener(alcance, id);
   await query('UPDATE deportistas SET activo = false WHERE id = $1', [id]);
 }
 
