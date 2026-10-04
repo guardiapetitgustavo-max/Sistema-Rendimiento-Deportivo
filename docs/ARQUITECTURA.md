@@ -4,7 +4,7 @@
 > analiza el sistema actual, define la arquitectura objetivo y detalla la **FASE 1**, que es la única que se implementa
 > en esta entrega. Las fases 2 a 10 quedan planificadas, no programadas.
 >
-> **Estado:** ✅ FASE 1 implementada y verificada (ver el final del documento). Siguiente: FASE 2, cuando se apruebe.
+> **Estado:** ✅ las 10 fases implementadas y validadas (versión 4.0.0). Ver el final del documento y [`VALIDACION.md`](VALIDACION.md).
 
 ---
 
@@ -284,16 +284,16 @@ Módulos: `auth`, `plataforma` (academias, planes), `academia` (config, permisos
 
 | Fase | Contenido | Entregable verificable |
 |---|---|---|
-| **1** | Auth, RBAC, multi-tenant, base de datos, configuración de academia, auditoría | Varias academias aisladas, 5 roles, permisos editables, módulos activables |
-| 2 | Sedes, instalaciones, deportes, disciplinas, posiciones, categorías, equipos, deportistas completos, tutores | Estructura de una academia multideporte completa |
-| 3 | Motor de métricas y pruebas, Modo Medición (campo, piscina, pista), cronómetro nivel 1-2, evaluaciones, asistencia | Medir en el lugar de entrenamiento, también sin señal |
-| 4 | Entrenamientos con plantillas por deporte, participantes, recuperación, sueño, fatiga, objetivos | Ciclo medir → entrenar |
-| 5 | Scoring versionado, evolución, récords, comparativas, dashboards por rol, reportes con branding | Evolución y rendimiento configurables |
-| 6 | IA: análisis, 360°, alertas, recomendaciones y asistente con datos reales; worker y cola | IA trazable sin datos inventados |
-| 7 | Video: subida, almacenamiento, procesamiento y visión por computadora | Análisis real o "ANÁLISIS NO DISPONIBLE" |
-| 8 | Nutrición: seguimiento, hidratación, orientación general | Módulo opcional por academia |
-| 9 | Planes, suscripciones, matrículas, pagos, límites por plan | Producto vendible |
-| 10 | Sensores, GPS, wearables, fotocélulas, cronometraje externo | Fuentes de medición externas |
+| **1** ✅ | Auth, RBAC, multi-tenant, base de datos, configuración de academia, auditoría | Varias academias aisladas, 5 roles, permisos editables, módulos activables |
+| **2** ✅ | Sedes, instalaciones, deportes, disciplinas, posiciones, categorías, equipos, deportistas completos, tutores | Estructura de una academia multideporte completa |
+| **3** ✅ | Motor de métricas y pruebas, Modo Medición (campo, piscina, pista), cronómetro nivel 1-2, evaluaciones, asistencia | Medir en el lugar de entrenamiento, también sin señal |
+| **4** ✅ | Entrenamientos con plantillas por deporte, participantes, recuperación, sueño, fatiga, objetivos | Ciclo medir → entrenar |
+| **5** ✅ | Scoring versionado, evolución, récords, comparativas, dashboards por rol, reportes con branding | Evolución y rendimiento configurables |
+| **6** ✅ | IA: análisis, 360°, alertas, recomendaciones y asistente con datos reales; worker y cola | IA trazable sin datos inventados |
+| **7** ✅ | Video: subida, almacenamiento, procesamiento y visión por computadora | Análisis real o "ANÁLISIS NO DISPONIBLE" |
+| **8** ✅ | Nutrición: seguimiento, hidratación, orientación general | Módulo opcional por academia |
+| **9** ✅ | Planes, suscripciones, matrículas, pagos, límites por plan | Producto vendible |
+| **10** ✅ | Sensores, GPS, wearables, fotocélulas, cronometraje externo | Fuentes de medición externas |
 
 ## 20. FASE 1 detallada
 
@@ -382,3 +382,33 @@ propia, **sin romper nada de lo que ya funciona**.
 
 - Sedes, instalaciones, deportes, disciplinas, posiciones, categorías y equipos como entidades configurables.
 - Deportistas con fecha de nacimiento, sexo, posición y equipo.
+
+
+## Estado de las FASES 2 a 10 (implementadas · versión 4.0.0)
+
+**Verificación:** 82 pruebas automáticas (`npm test`), de ellas 51 en la batería de validación
+([`VALIDACION.md`](VALIDACION.md)) con verdad conocida, simulación estadística y la academia demo de extremo a extremo;
+5 pruebas del worker de Python; recorridos en navegador con los 6 roles en escritorio y celular.
+
+| Fase | Backend | Frontend |
+|---|---|---|
+| 2 Estructura | `modules/estructura` (catálogos con `core/catalogo.js`), deportistas ampliados (fecha de nacimiento, sexo, deporte, posición, categoría, medidas, foto), equipos y miembros, alcance por equipo (`core/alcance.js`) | `views/estructura.js` |
+| 3 Medición | `domain/medicion.js` (motor puro), `modules/metodologia` (métricas, pruebas, plantillas versionadas), `modules/medicion` (sesiones, resultados por intento, idempotencia, correcciones auditadas, cronómetro de dos dispositivos, Modo Piscina) | `views/metodologia.js`, `views/medicion.js` (cola sin conexión, cronómetro, carriles) |
+| 4 Entrenamiento | `modules/entrenamiento` (sesiones, ejercicios, asistencia, sRPE), `modules/recuperacion`, `modules/objetivos` (progreso con datos reales) | `views/entrenamiento.js` |
+| 5 Rendimiento | `modules/rendimiento` (evolución compatible, tendencias con significación estadística, scoring versionado con fotos, rankings, comparativas, panel), reportes con branding y límite mensual | `views/rendimiento.js`, panel en el dashboard, reportes de marcas/asistencia/alertas |
+| 6 Inteligencia | `modules/inteligencia` (motor de alertas configurable con clave única y notificaciones, análisis deportista/360°/equipo con evidencia y `datos_usados`, recomendaciones con aprobación, asistente por intención) | `views/inteligencia.js`, campana de notificaciones |
+| 7 Video | `core/almacenamiento.js` (Supabase con URL firmadas / local), `modules/video`, cola `trabajos`, `servicios_estado`, `worker/` en Python | `views/videos.js` (subida con progreso, A/B) |
+| 8 Nutrición | perfiles, horarios, orientación general, rol `profesional` | `views/nutricion.js`, registro propio en el portal |
+| 9 Comercial | planes con límites y módulos (`core/limites.js`), suscripciones con historial, cobros de plataforma, matrículas, cuotas, pagos, comunicados | `views/comercial.js`, planes y demo en `views/plataforma.js`, pagos en el portal del padre |
+| 10 Integraciones | dispositivos con clave de API (SHA-256), `POST /api/integraciones/api/mediciones` (lote, idempotencia, GPS), tarea diaria con `CRON_SECRET` y `vercel.json` | `views/integraciones.js` |
+
+**Decisiones importantes**
+
+- Toda la lógica de medición está en `domain/medicion.js`, sin base de datos, para poder probarla con valores conocidos.
+- Un resultado solo se compara con otros de la misma prueba, unidad y contexto (`claveComparacion`).
+- Las estimaciones (video) se guardan con `oficial = false` y nunca entran en rankings, evolución ni alertas.
+- Scoring y plantillas se versionan; los puntajes se guardan con la versión usada (`snapshots_rendimiento`).
+- Las alertas guardan los datos que las generaron y una `clave_unica` para no duplicarse.
+- Las tendencias exigen significación estadística (t de Student al 90 %) para no informar ruido como mejora.
+- Los valores que difieren > 25 % de la mejor marca se marcan como atípicos y no cuentan como récord ni caída.
+- El procesamiento pesado (video) va a un worker externo; Vercel solo encola.

@@ -58,6 +58,10 @@ async function cargarContexto(usuarioId, academiaPreferida = null) {
             to_jsonb(c) - 'academia_id' - 'actualizado_en' - 'logo' AS config, (c.logo IS NOT NULL) AS tiene_logo,
             (SELECT coalesce(jsonb_object_agg(rp.permiso, rp.permitido), '{}'::jsonb)
                FROM rol_permisos rp WHERE rp.academia_id = a.id AND rp.rol = m.rol) AS excepciones,
+            (SELECT jsonb_build_object('clave', pl.clave, 'nombre', pl.nombre, 'modulos', pl.modulos, 'limites', pl.limites,
+                                       'estado', su.estado, 'fin', su.fin)
+               FROM suscripciones su JOIN planes pl ON pl.id = su.plan_id
+              WHERE su.academia_id = a.id AND su.actual) AS plan,
             EXISTS (SELECT 1 FROM membresias ms JOIN academias s ON s.id = ms.academia_id
                     WHERE ms.usuario_id = u.id AND ms.activo AND s.estado = 'suspendida') AS tiene_suspendida
      FROM usuarios u
@@ -93,7 +97,8 @@ async function cargarContexto(usuarioId, academiaPreferida = null) {
       nombre: fila.academia_nombre,
       slug: fila.academia_slug,
       config: { ...config, tiene_logo: fila.tiene_logo }, // el logo se sirve aparte (GET /academia/logo)
-      modulos: modulos.efectivos(guardados),
+      plan: fila.plan || null,
+      modulos: modulos.efectivos(guardados, fila.plan?.modulos ?? null),
     };
     usuario.permisos = permisos.efectivos(fila.rol, fila.excepciones);
   }

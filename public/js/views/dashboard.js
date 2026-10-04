@@ -32,10 +32,39 @@ function saludo() {
   return hora < 19 ? 'Buenas tardes' : 'Buenas noches';
 }
 
+const COLOR_PRIORIDAD = { alta: 'danger', media: 'warning', baja: 'info' };
+
+/** Panel con los datos REALES de medición, asistencia, recuperación y alertas (fases 3-6). */
+function panelRendimiento(p) {
+  const t = p.totales;
+  return html`
+    <div class="row g-3 mb-4">
+      ${tarjetaDato('stopwatch', 'azul', t.resultados_30d, 'Resultados (30 días)')}
+      ${tarjetaDato('person-check', 'verde', t.asistencia_30d, 'Asistencia % (30 días)')}
+      ${tarjetaDato('calendar-week', 'cian', t.entrenamientos_7d, 'Entrenamientos (7 días)')}
+      ${tarjetaDato('heart-pulse', 'ambar', t.fatiga_media_7d, 'Fatiga media (7 días)')}
+    </div>
+    <div class="row g-3 mb-4">
+      <div class="col-lg-6"><div class="card h-100">
+        <div class="card-header d-flex justify-content-between"><span><i class="bi bi-bell me-2"></i>Alertas abiertas</span><a class="small" href="#/alertas">Ver todas</a></div>
+        <div class="list-group list-group-flush">${p.alertas.length ? p.alertas.slice(0, 6).map((a) => html`
+          <a href="#/alertas" class="list-group-item list-group-item-action small d-flex gap-2"><span class="badge text-bg-${COLOR_PRIORIDAD[a.prioridad]} align-self-start">${a.prioridad}</span>
+            <span><b>${a.deportista || 'Grupo'}</b> · ${a.titulo}<div class="text-muted">${a.motivo}</div></span></a>`)
+    : html`<div class="list-group-item small text-muted">Sin alertas abiertas.</div>`}</div></div></div>
+      <div class="col-lg-6"><div class="card h-100">
+        <div class="card-header"><i class="bi bi-lightning me-2"></i>Últimos resultados y récords</div>
+        <div class="list-group list-group-flush">${p.records_recientes.slice(0, 3).map((r) => html`<a class="list-group-item list-group-item-action small text-success" href="#/rendimiento?t=evolucion&deportista=${r.deportista_id}">
+            <i class="bi bi-trophy-fill me-1 text-warning"></i>${r.titulo} · ${fecha(r.fecha)}</a>`)}
+          ${p.ultimos_resultados.slice(0, 5).map((r) => html`<a class="list-group-item list-group-item-action small d-flex justify-content-between" href="#/rendimiento?t=evolucion&deportista=${r.deportista_id}">
+            <span>${r.deportista} · ${r.prueba}</span><span class="fw-semibold">${r.texto}</span></a>`)}
+          ${!p.ultimos_resultados.length ? html`<div class="list-group-item small text-muted">Aún no hay resultados. Usa el <a href="#/medicion">Modo Medición</a>.</div>` : ''}</div></div></div>
+    </div>`;
+}
+
 export async function render(vista, { usuario }) {
-  const datos = await api.get('/dashboard');
+  const [datos, panel] = await Promise.all([api.get('/dashboard'), puede('rendimiento.ver') ? api.get('/rendimiento/panel').catch(() => null) : null]);
   const { totales, alertas, graficos } = datos;
-  actualizarAlertas(alertas.length);
+  actualizarAlertas(panel ? panel.alertas.length : alertas.length);
   const nombreCorto = usuario.nombre.split(' ')[0];
 
   montar(vista, html`
@@ -45,11 +74,13 @@ export async function render(vista, { usuario }) {
         <h2 class="h3 fw-bold mb-2">${saludo()}, ${nombreCorto}</h2>
         ${esAdmin() ? html`<span class="badge text-bg-warning mb-2"><i class="bi bi-shield-lock me-1"></i>Administrador ·
           ${coachElegido() ? `viendo a ${nombreCoach(coachElegido()) || 'un coach'}` : 'viendo toda la academia'}</span>` : ''}
-        <p class="mb-3 text-white-50">${alertas.length
-    ? `Tienes ${alertas.length} alerta(s) de rendimiento por revisar.`
+        <p class="mb-3 text-white-50">${panel?.alertas.length
+    ? `Tienes ${panel.alertas.length} alerta(s) abiertas por revisar.`
+    : alertas.length ? `Tienes ${alertas.length} alerta(s) de rendimiento por revisar.`
     : totales.deportistas ? 'Todo en orden: no hay alertas de rendimiento.' : 'Empieza cargando a tus deportistas.'}</p>
         <div class="d-flex flex-wrap gap-2">
-          ${puede('evaluaciones.gestionar') ? html`<a class="btn btn-light fw-semibold" href="#/evaluaciones/nueva"><i class="bi bi-clipboard-plus me-1"></i>Nueva evaluación</a>` : ''}
+          ${puede('medicion.usar') ? html`<a class="btn btn-light fw-semibold" href="#/medicion"><i class="bi bi-stopwatch me-1"></i>Modo Medición</a>` : ''}
+          ${puede('evaluaciones.gestionar') ? html`<a class="btn btn-outline-light" href="#/evaluaciones/nueva"><i class="bi bi-clipboard-plus me-1"></i>Evaluación por observación</a>` : ''}
           ${puede('importacion.usar') ? html`<a class="btn btn-outline-light" href="#/importar"><i class="bi bi-cloud-arrow-up me-1"></i>Importar Excel</a>` : ''}
           ${puede('ia.usar') && moduloActivo('ia') ? html`<a class="btn btn-outline-light" href="#/ia"><i class="bi bi-stars me-1"></i>Asistente IA</a>` : ''}
           ${puede('usuarios.gestionar') ? html`<a class="btn btn-outline-light" href="#/admin"><i class="bi bi-person-badge me-1"></i>Usuarios</a>` : ''}
@@ -57,6 +88,8 @@ export async function render(vista, { usuario }) {
       </div>
     </div>
 
+    ${panel ? panelRendimiento(panel) : ''}
+    ${panel ? html`<h3 class="h6 text-muted text-uppercase mb-3" style="letter-spacing:.06em">Evaluaciones por observación (escala 0-100)</h3>` : ''}
     <div class="row g-3 mb-4">
       ${tarjetaDato('people', 'azul', totales.deportistas, 'Deportistas activos')}
       ${tarjetaDato('clipboard2-pulse', 'cian', totales.evaluaciones, 'Evaluaciones')}

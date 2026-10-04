@@ -1,11 +1,12 @@
 # SportEval AI · Plataforma de rendimiento deportivo
 
-Plataforma **multi-academia** (SaaS) para gestionar academias deportivas y evaluar el rendimiento de sus
-deportistas, con roles y permisos configurables, Machine Learning, asistente de IA, rutinas por deporte,
-alimentación y reportes en Excel/PDF.
+Plataforma **multi-academia** (SaaS) para medir, entrenar y analizar el rendimiento deportivo: Modo Medición en el
+celular (también sin conexión), Modo Piscina, cronómetro con dos teléfonos, entrenamientos, asistencia, recuperación,
+objetivos, evolución y récords, scoring versionado, alertas, análisis IA trazable, video, nutrición, matrículas y
+pagos, planes SaaS e integraciones con fotocélulas/GPS.
 
-> **Arquitectura y hoja de ruta:** [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md). Estado: **FASE 1 implementada**
-> (multi-academia, roles, permisos, configuración por academia y auditoría).
+> **Arquitectura:** [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) · **Validación:** [`docs/VALIDACION.md`](docs/VALIDACION.md)
+> Estado: **las 10 fases implementadas** (versión 4.0.0) y validadas con 82 pruebas automáticas.
 
 **Stack:** Node.js + Express (API) · PostgreSQL en Supabase · Frontend HTML/JS con Bootstrap, Chart.js y three.js (3D) · Despliegue en Vercel.
 
@@ -38,6 +39,20 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 | Alimentación | Comidas, hidratación y horas de sueño por día. |
 | Reportes | General, ranking, evolución, seguimiento, estadísticas e individual en Excel y PDF. |
 | Mi cuenta | Datos personales, contraseña, tema, cambio de academia y respaldo JSON. El reinicio de datos es solo para el administrador. |
+| **Estructura** | Sedes, instalaciones (piscinas con largo y carriles), deportes desde **14 plantillas** (fútbol, natación, atletismo, básquet, vóley, tenis…), disciplinas, posiciones, categorías y equipos con sus miembros. |
+| **Metodología** | Métricas con unidad y dirección de mejora (menos es mejor, más es mejor, rango objetivo), pruebas con protocolo y baremo, plantillas de evaluación y **scoring versionados**, reglas de alerta ajustables. |
+| **Modo Medición** | Sesiones de evaluación, captura rápida por intento en el celular, cronómetro con parciales, **cola sin conexión** que sincroniza sin duplicar, corrección y anulación auditadas, aviso de valores atípicos. |
+| **Modo Piscina** | Varios carriles con salida común, parciales y llegada por carril; ritmo, velocidad y eficiencia de brazada. Piscinas de 25 y 50 m nunca se mezclan. |
+| **Cronómetro de 2 teléfonos** | Uno marca la salida y otro la llegada; ambos se sincronizan con el reloj del servidor y el resultado guarda su incertidumbre. |
+| **Entrenamientos y asistencia** | Sesiones con ejercicios por tipo de deporte, asistencia con RPE, carga semanal (sRPE) y % de asistencia. |
+| **Recuperación y objetivos** | Sueño, fatiga, estrés y dolor (lo registra el propio deportista); objetivos con progreso calculado con datos reales. |
+| **Rendimiento** | Evolución por prueba con récords y tendencia estadística, puntaje compuesto, rankings y comparativas solo entre resultados compatibles. |
+| **Alertas e IA** | Caídas, récords, baja asistencia, fatiga, sueño, dolor, valores atípicos y objetivos vencidos; análisis del deportista, 360° y de equipo con su evidencia; recomendaciones que aprueba el coach; "DATOS INSUFICIENTES" cuando no hay datos. |
+| **Video** | Subida privada (URL firmada), comparación A/B cuadro a cuadro, observaciones y worker de análisis; "ANÁLISIS NO DISPONIBLE" si no hay modelo. |
+| **Nutrición** | Perfil, horarios, orientación general de hidratación y notas del rol **profesional** (no clínico). |
+| **Comercial** | Matrículas, cuotas mensuales, cobros y vencimientos; comunicados por rol o equipo; planes SaaS con límites y módulos. |
+| **Integraciones** | Dispositivos con clave de API (fotocélulas, GPS, wearables, cronometraje); el GPS calcula distancia, ritmo y FC. |
+| **Academia demo** | "Sport Academy Demo" con 36 deportistas y 4 meses de datos, creada con un clic desde la Plataforma. |
 
 ---
 
@@ -72,7 +87,11 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 │   └── modules/              # auth, plataforma, academia, admin (usuarios), portal, deportistas,
 │                             # evaluaciones, alimentacion, importacion, ml, ia, rutinas, alertas,
 │                             # dashboard, reportes, cuenta
-├── tests/                    # Pruebas unitarias y de integración (node:test)
+├── src/domain/medicion.js    # Motor de medición: dirección de mejora, tiempos, tendencias, scoring, natación, GPS
+├── src/domain/plantillas-deporte.js # 14 plantillas de deporte con pruebas y baremos
+├── src/demo/demo.js          # Academia de demostración (npm run demo)
+├── worker/                   # Worker de video en Python (fuera de Vercel)
+├── tests/                    # Pruebas unitarias, de integración y la batería de validación (node:test)
 ├── .github/workflows/ci.yml  # Verificación automática en GitHub
 ├── .env.example
 └── vercel.json
@@ -90,6 +109,10 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
    *(Si ya tenías datos de una versión anterior, `schema.sql` los migra solo a "Mi academia" sin perder nada.)*
 4. Ve a **Connect** (arriba) → **Connection string** → **Transaction pooler** y copia la URL
    (termina en `:6543/postgres`). Reemplaza `[YOUR-PASSWORD]` por tu contraseña.
+5. *(Para videos)* **Storage → New bucket** → nombre `videos`, **sin** marcar "Public bucket".
+
+**Actualizar a una versión nueva:** vuelve a ejecutar `sql/schema.sql` completo. Es seguro: solo crea lo que falta y
+migra los datos existentes, nunca borra.
 
 ## 2. Configurar Vercel
 
@@ -101,6 +124,12 @@ En tu proyecto de Vercel → **Settings → Environment Variables**, agrega:
 | `JWT_SECRET` | Un texto largo y aleatorio (mínimo 32 caracteres) |
 | `IA_PROVIDER` *(opcional)* | `local` u `openai` |
 | `OPENAI_API_KEY` *(opcional)* | Tu clave de OpenAI si usas `openai` |
+| `SUPABASE_URL` *(videos)* | Supabase → Project Settings → API → Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` *(videos)* | Supabase → Project Settings → API → `service_role` (secreta) |
+| `SUPABASE_BUCKET` *(opcional)* | `videos` |
+| `CRON_SECRET` | Texto aleatorio: protege la tarea diaria (alertas, vencimientos) que Vercel ejecuta sola |
+
+Sin las variables de Supabase el módulo de video aparece desactivado con su motivo; todo lo demás funciona.
 
 Luego haz `git push`: Vercel despliega solo. Si el proyecto ya estaba creado, entra a
 **Deployments → ⋯ → Redeploy** después de agregar las variables.
@@ -117,6 +146,17 @@ npm run dev
 ```
 
 Abre <http://localhost:3000>.
+
+## 4. Probar con la academia demo
+
+Entra como super administrador → **Plataforma → Academia demo** (o `npm run demo`). Se crea "Sport Academy Demo"
+con cuentas `admin@`, `coach.futbol@`, `coach.natacion@`, `coach.atletismo@`, `nutricion@`, `deportista@` y
+`padre@demo.sportacademy.test`, todas con la contraseña `Demo2026!`. Puedes recrearla cuando quieras.
+
+## 5. Worker de video (opcional)
+
+Ver [`worker/README.md`](worker/README.md): un proceso en Python (Docker incluido) que se ejecuta en cualquier
+servidor y analiza los videos en segundo plano.
 
 ---
 
@@ -143,7 +183,8 @@ Descarga la plantilla desde **Importar Excel → Descargar plantilla**.
 |---|---|---|
 | Super administrador | Plataforma | Crea, renombra, suspende y reactiva academias. Ve cifras de uso, no datos deportivos. |
 | Administrador | Su academia | Configura la academia, sus usuarios, permisos y módulos. Ve y edita todo dentro de ella. |
-| Coach | Su academia | Opera con **sus** deportistas según los permisos que le dé la academia. |
+| Coach | Su academia | Opera con **sus** deportistas y los de **sus equipos** según los permisos que le dé la academia. No cambia la metodología salvo permiso. |
+| Profesional | Su academia | Nutricionista, fisioterapeuta…: ve a todos los deportistas, registra recuperación y notas de nutrición; no modifica resultados. |
 | Deportista | Su academia | Consulta su propio progreso (solo lectura). |
 | Padre / madre | Su academia | Consulta el progreso de los deportistas vinculados (solo lectura). |
 
@@ -168,7 +209,8 @@ Descarga la plantilla desde **Importar Excel → Descargar plantilla**.
 
 ```powershell
 npm run lint      # revisa el estilo y errores comunes del código
-npm test          # pruebas unitarias (no necesitan base de datos)
+npm test          # pruebas unitarias + motor de medición (no necesitan base de datos)
+npm run validar   # batería de validación del análisis de rendimiento (ver docs/VALIDACION.md)
 ```
 
 La prueba de integración recorre toda la API contra una base PostgreSQL real. Solo se ejecuta si defines

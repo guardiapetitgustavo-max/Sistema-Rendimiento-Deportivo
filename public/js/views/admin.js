@@ -14,8 +14,8 @@ import {
 } from '../sesion.js';
 import { tarjetaDato } from './dashboard.js';
 
-const ROLES = ['coach', 'admin', 'deportista', 'padre'].map((valor) => ({ valor, texto: NOMBRE_ROL[valor] }));
-const COLOR_ROL = { admin: 'text-bg-warning', coach: 'text-bg-primary', deportista: 'text-bg-info', padre: 'text-bg-secondary' };
+const ROLES = ['coach', 'admin', 'profesional', 'deportista', 'padre'].map((valor) => ({ valor, texto: NOMBRE_ROL[valor] }));
+const COLOR_ROL = { admin: 'text-bg-warning', coach: 'text-bg-primary', profesional: 'text-bg-success', deportista: 'text-bg-info', padre: 'text-bg-secondary' };
 const operativo = (rol) => ['admin', 'coach'].includes(rol);
 const avisarCambio = () => window.dispatchEvent(new CustomEvent('coaches-cambiaron'));
 

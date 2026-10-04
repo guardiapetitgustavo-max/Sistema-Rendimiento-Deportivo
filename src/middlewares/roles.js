@@ -23,6 +23,9 @@ function requiereAcademia(req, res, next) {
 function definirAlcance(req, res, next) {
   const { usuario } = req;
   let coach = usuario.id;
+  // El profesional (nutrición, fisioterapia…) atiende a toda la academia: ve todos los deportistas,
+  // pero solo puede hacer lo que le permitan sus permisos (por defecto no modifica resultados).
+  if (usuario.rol === 'profesional') coach = null;
   if (esAdmin(usuario)) {
     const pedido = Number(req.get('x-coach'));
     coach = Number.isInteger(pedido) && pedido > 0 ? pedido : null;

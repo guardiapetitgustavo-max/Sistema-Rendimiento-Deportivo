@@ -12,6 +12,7 @@ const {
 const deportistas = require('../deportistas/deportistas.service');
 const { generarRecomendacion } = require('../ia/reglas');
 const bosque = require('./random-forest');
+const { condicionDeportista } = require('../../core/alcance');
 
 const MIN_REGISTROS_REALES = 15;
 const CONFIG_MODELO = { arboles: 100, profundidadMax: 8, semilla: 42 };
@@ -165,7 +166,7 @@ async function ultimasPredicciones(alcance, { deportistaId = null, limite = 50 }
     `SELECT * FROM (
        SELECT DISTINCT ON (p.deportista_id) p.*, d.codigo, d.nombre, d.categoria
        FROM predicciones p JOIN deportistas d ON d.id = p.deportista_id
-       WHERE d.academia_id = $1 AND ($2::int IS NULL OR d.usuario_id = $2) AND d.activo AND ($3::int IS NULL OR d.id = $3)
+       WHERE ${condicionDeportista('d', '$1', '$2')} AND d.activo AND ($3::int IS NULL OR d.id = $3)
        ORDER BY p.deportista_id, p.fecha DESC, p.id DESC
      ) ultimas ORDER BY fecha DESC LIMIT $4`,
     [alcance.academia, alcance.coach, deportistaId, limite],

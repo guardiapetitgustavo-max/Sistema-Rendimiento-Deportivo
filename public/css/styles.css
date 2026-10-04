@@ -1446,3 +1446,19 @@ a {
 #vista {
   overflow-x: clip;
 }
+
+/* ---- Fases 2-10 ---- */
+.panel-notificaciones { width: min(360px, 92vw); }
+.borde-danger { border-left: 4px solid var(--bs-danger) !important; }
+.borde-warning { border-left: 4px solid var(--bs-warning) !important; }
+.borde-info { border-left: 4px solid var(--bs-info) !important; }
+.tarjeta-sesion { transition: transform .15s ease, box-shadow .15s ease; }
+.tarjeta-sesion:hover { transform: translateY(-2px); box-shadow: 0 .5rem 1.25rem rgba(15, 23, 42, .08); }
+.cronometro [data-pantalla] { min-width: 9ch; }
+.carril { background: var(--bs-body-bg); }
+[data-registrar] .form-control { min-width: 0; }
+@media (max-width: 575.98px) {
+  [data-registrar] { width: 100%; }
+  [data-registrar] input[name="valor"] { flex: 1 1 auto; width: auto !important; }
+  .cronometro .btn-lg { padding: .6rem .9rem; }
+}

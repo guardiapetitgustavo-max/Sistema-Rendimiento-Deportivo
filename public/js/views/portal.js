@@ -4,12 +4,14 @@
  */
 import { api } from '../api.js';
 import {
-  html, montar, encabezado, fecha, numero, insigniaNivel, insigniaPuntaje, vacio,
+  html, montar, encabezado, fecha, numero, insigniaNivel, insigniaPuntaje, vacio, modalFormulario, avisar, mostrarError,
 } from '../ui.js';
+import { campos, limpiar } from '../formularios.js';
+import { CAMPOS_RECUPERACION } from './entrenamiento.js';
 import { lineas, radar } from '../graficos.js';
 import { CAPACIDADES } from '../constantes.js';
 import { ir } from '../navegacion.js';
-import { rolActual, academiaActual } from '../sesion.js';
+import { rolActual, academiaActual, puede, moduloActivo } from '../sesion.js';
 import { tarjetaDato } from './dashboard.js';
 
 export async function render(vista) {
@@ -56,6 +58,7 @@ export async function detalle(vista, { params: [id], unico = false }) {
       </div>
       <span class="badge text-bg-light border align-self-center"><i class="bi bi-eye me-1"></i>Solo consulta</span>
     </div>
+    <div data-seguimiento class="mb-4"></div>
 
     <div class="row g-3 mb-4">
       ${tarjetaDato('graph-up-arrow', 'azul', d.promedio_general, 'Promedio general')}
@@ -106,4 +109,99 @@ export async function detalle(vista, { params: [id], unico = false }) {
   }
   if (ultima) radar(vista.querySelector('#g-radar'), CAPACIDADES.map((c) => c.nombre), CAPACIDADES.map((c) => ultima[c.clave]));
   if (!unico) vista.querySelector('a[href="#/portal"]')?.addEventListener('click', (e) => { e.preventDefault(); ir('/portal'); });
+  await seguimiento(vista.querySelector('[data-seguimiento]'), id);
+}
+
+// ---------------------------------------------------------------------------
+// Seguimiento (fases 4-9): marcas reales, asistencia, objetivos, recomendaciones aprobadas,
+// recuperación propia, videos autorizados, pagos y comunicados
+// ---------------------------------------------------------------------------
+const COLOR_OBJ = { activo: 'primary', alcanzado: 'success', vencido: 'danger' };
+
+async function seguimiento(caja, id) {
+  let s;
+  try {
+    s = await api.get(`/portal/deportistas/${id}/seguimiento`);
+  } catch (error) {
+    montar(caja, html`<div class="alert alert-light border small">No se pudo cargar el seguimiento: ${error.message}</div>`);
+    return;
+  }
+  const esDeportista = rolActual() === 'deportista';
+  const [videos, pagos, comunicados] = await Promise.all([
+    puede('portal.videos') && moduloActivo('video') ? api.get('/portal/videos').catch(() => []) : [],
+    puede('portal.pagos') && moduloActivo('comercial') ? api.get('/portal/pagos').catch(() => []) : [],
+    api.get('/portal/comunicados').catch(() => []),
+  ]);
+  const r7 = s.recuperacion.resumen;
+  montar(caja, html`
+    ${s.logros.length ? html`<div class="alert alert-success d-flex gap-2 align-items-start"><i class="bi bi-trophy-fill fs-4"></i><div>
+      ${s.logros.slice(0, 3).map((l) => html`<div><strong>${l.titulo}</strong> · <span class="small">${l.motivo}</span></div>`)}</div></div>` : ''}
+    <div class="row g-3 mb-3">
+      <div class="col-lg-8"><div class="card h-100"><div class="card-header"><i class="bi bi-stopwatch me-2"></i>Mis marcas (resultados oficiales)</div>
+        ${s.evolucion.length ? html`<div class="table-responsive"><table class="table table-sm mb-0 align-middle">
+          <thead class="table-light"><tr><th>Prueba</th><th>Actual</th><th>Mejor marca</th><th>Tendencia</th></tr></thead>
+          <tbody>${s.evolucion.map((e) => html`<tr><td>${e.prueba}${e.contexto ? html` <span class="badge text-bg-light">${e.contexto}</span>` : ''}</td>
+            <td>${e.textos.actual} <span class="small text-muted">${fecha(e.actual.fecha)}</span></td>
+            <td class="text-success fw-semibold">${e.textos.mejor_marca || '—'}${e.record_personal ? html` <i class="bi bi-trophy-fill text-warning"></i>` : ''}</td>
+            <td>${{ mejora: html`<span class="text-success">Mejorando</span>`, empeora: html`<span class="text-danger">Bajando</span>`, estable: 'Estable' }[e.tendencia.clasificacion] || html`<span class="small text-muted">Pocos datos</span>`}</td></tr>`)}</tbody></table></div>`
+    : html`<div class="card-body">${vacio('Aún no hay marcas registradas.', 'stopwatch')}</div>`}</div></div>
+      <div class="col-lg-4"><div class="card h-100"><div class="card-body">
+        <div class="etiqueta-dato">Asistencia</div><div class="display-6 fw-bold">${s.asistencia.porcentaje ?? '—'}${s.asistencia.porcentaje !== null ? '%' : ''}</div>
+        <div class="small text-muted mb-3">${s.asistencia.registros.length} registros recientes</div>
+        <div class="etiqueta-dato">Recuperación (7 días)</div>
+        <div class="small">Sueño ${r7.sueno_medio_h ?? '—'} h · Fatiga ${r7.fatiga_media ?? '—'}/10${r7.dias_con_dolor ? ` · ${r7.dias_con_dolor} día(s) con dolor` : ''}</div>
+        ${esDeportista && puede('portal.recuperacion') ? html`<button class="btn btn-primary btn-sm mt-3 w-100" data-mi-recuperacion><i class="bi bi-heart-pulse me-1"></i>Registrar cómo estoy hoy</button>` : ''}
+        ${esDeportista && puede('portal.nutricion') && moduloActivo('nutricion') ? html`<button class="btn btn-light btn-sm mt-2 w-100" data-mi-comida><i class="bi bi-cup-hot me-1"></i>Registrar mis comidas</button>` : ''}
+      </div></div></div>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-6"><div class="card h-100"><div class="card-header"><i class="bi bi-bullseye me-2"></i>Mis objetivos</div>
+        <ul class="list-group list-group-flush">${s.objetivos.length ? s.objetivos.map((o) => html`<li class="list-group-item d-flex justify-content-between gap-2">
+          <span>${o.descripcion}${o.fecha_limite ? html` <span class="small text-muted">· hasta ${fecha(o.fecha_limite)}</span>` : ''}</span>
+          <span class="badge text-bg-${COLOR_OBJ[o.estado] || 'secondary'}">${o.estado}</span></li>`) : html`<li class="list-group-item small text-muted">Sin objetivos todavía.</li>`}</ul></div></div>
+      <div class="col-md-6"><div class="card h-100"><div class="card-header"><i class="bi bi-lightbulb me-2"></i>Recomendaciones de tu coach</div>
+        <ul class="list-group list-group-flush">${s.recomendaciones.length ? s.recomendaciones.map((r) => html`<li class="list-group-item small">${r.texto}</li>`)
+    : html`<li class="list-group-item small text-muted">Aún no hay recomendaciones aprobadas.</li>`}</ul></div></div>
+      ${videos.length ? html`<div class="col-12"><div class="card"><div class="card-header"><i class="bi bi-camera-video me-2"></i>Mis videos</div><div class="card-body row g-2">
+        ${videos.map((v) => html`<div class="col-md-4"><div class="border rounded p-2"><div class="small fw-semibold">${v.titulo}</div><div class="small text-muted">${fecha(v.fecha)}</div>
+          <div class="ratio ratio-16x9 mt-1 bg-dark rounded" data-reproductor="${v.id}"><button class="btn btn-sm btn-light m-auto" style="width:auto;height:auto" data-ver-video="${v.id}"><i class="bi bi-play-fill"></i></button></div>
+          ${(v.observaciones || []).map((o) => html`<div class="small mt-1 border-start ps-2">${o.observaciones}</div>`)}</div></div>`)}</div></div></div>` : ''}
+      ${pagos.length ? html`<div class="col-md-6"><div class="card h-100"><div class="card-header"><i class="bi bi-cash-coin me-2"></i>Pagos</div>
+        <ul class="list-group list-group-flush">${pagos.slice(0, 8).map((p) => html`<li class="list-group-item d-flex justify-content-between small">
+          <span>${p.concepto} <span class="text-muted">· vence ${fecha(p.fecha_vencimiento)}</span></span>
+          <span>${p.moneda} ${Number(p.monto).toFixed(2)} <span class="badge text-bg-${{ pagado: 'success', pendiente: 'warning', vencido: 'danger' }[p.estado] || 'secondary'}">${p.estado}</span></span></li>`)}</ul></div></div>` : ''}
+      ${comunicados.length ? html`<div class="col-md-6"><div class="card h-100"><div class="card-header"><i class="bi bi-megaphone me-2"></i>Comunicados</div>
+        <ul class="list-group list-group-flush">${comunicados.slice(0, 5).map((c) => html`<li class="list-group-item"><div class="fw-semibold small">${c.titulo}</div><div class="small text-muted">${c.cuerpo}</div></li>`)}</ul></div></div>` : ''}
+    </div>`);
+
+  caja.querySelector('[data-mi-recuperacion]')?.addEventListener('click', () => modalFormulario({
+    titulo: '¿Cómo estás hoy?', tamano: 'modal-lg', cuerpo: campos(CAMPOS_RECUPERACION),
+    alGuardar: async (datos) => {
+      await api.post('/portal/recuperacion', limpiar(CAMPOS_RECUPERACION, datos));
+      avisar('¡Gracias! Tu coach podrá verlo.');
+      seguimiento(caja, id);
+    },
+  }));
+  caja.querySelector('[data-mi-comida]')?.addEventListener('click', () => {
+    const defs = [
+      { nombre: 'fecha', etiqueta: 'Fecha', tipo: 'fecha', defecto: new Date().toLocaleDateString('en-CA') },
+      { nombre: 'hidratacion_litros', etiqueta: 'Agua (litros)', tipo: 'numero', min: 0, max: 24 },
+      { nombre: 'desayuno', etiqueta: 'Desayuno' }, { nombre: 'hora_desayuno', etiqueta: 'Hora', tipo: 'hora' },
+      { nombre: 'almuerzo', etiqueta: 'Almuerzo' }, { nombre: 'hora_almuerzo', etiqueta: 'Hora', tipo: 'hora' },
+      { nombre: 'cena', etiqueta: 'Cena' }, { nombre: 'hora_cena', etiqueta: 'Hora', tipo: 'hora' },
+      { nombre: 'colaciones', etiqueta: 'Snacks', col: 'col-12' },
+    ];
+    modalFormulario({
+      titulo: 'Mis comidas', tamano: 'modal-lg', cuerpo: campos(defs),
+      alGuardar: async (datos) => { await api.post('/portal/alimentacion', limpiar(defs, datos)); avisar('Comidas registradas.'); },
+    });
+  });
+  caja.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-ver-video]');
+    if (!b) return;
+    try {
+      const { url } = await api.get(`/portal/videos/${b.dataset.verVideo}/url`);
+      if (url) montar(caja.querySelector(`[data-reproductor="${b.dataset.verVideo}"]`), html`<video src="${url}" controls playsinline class="rounded"></video>`);
+    } catch (error) { mostrarError(error); }
+  });
 }

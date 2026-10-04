@@ -28,7 +28,9 @@ export const esSuperAdmin = () => Boolean(usuario?.es_super_admin);
 export const puede = (permiso) => Boolean(usuario?.permisos?.includes(permiso));
 export const moduloActivo = (clave) => Boolean(usuario?.academia?.modulos?.[clave]);
 
-export const NOMBRE_ROL = { admin: 'Administrador', coach: 'Coach', deportista: 'Deportista', padre: 'Padre / madre' };
+export const NOMBRE_ROL = {
+  admin: 'Administrador', coach: 'Coach', profesional: 'Profesional', deportista: 'Deportista', padre: 'Padre / madre',
+};
 
 export function fijarUsuario(nuevo) {
   const cambioAcademia = usuario?.academia?.id !== nuevo?.academia?.id;
@@ -43,6 +45,8 @@ export function fijarUsuario(nuevo) {
 export function rutaInicio() {
   if (puede('dashboard.ver')) return '/dashboard';
   if (puede('portal.ver')) return '/portal';
+  if (puede('rendimiento.ver')) return '/rendimiento';
+  if (puede('deportistas.ver')) return '/deportistas';
   if (esSuperAdmin() && !academiaActual()) return '/plataforma';
   return '/cuenta';
 }

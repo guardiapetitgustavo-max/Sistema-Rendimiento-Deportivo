@@ -11,6 +11,9 @@ const PESTANAS = [
   { tipo: 'evolucion', texto: 'Evolución', icono: 'graph-up' },
   { tipo: 'seguimiento', texto: 'Seguimiento', icono: 'exclamation-diamond' },
   { tipo: 'estadisticas', texto: 'Estadísticas', icono: 'calculator' },
+  { tipo: 'marcas', texto: 'Mejores marcas', icono: 'stopwatch' },
+  { tipo: 'asistencia', texto: 'Asistencia', icono: 'person-check' },
+  { tipo: 'alertas', texto: 'Alertas', icono: 'bell' },
 ];
 
 const botonesDescarga = (tipo) => html`

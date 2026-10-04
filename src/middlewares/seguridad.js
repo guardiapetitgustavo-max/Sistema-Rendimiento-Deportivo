@@ -10,6 +10,8 @@ const METODOS_SEGUROS = new Set(['GET', 'HEAD', 'OPTIONS']);
  */
 function proteccionCsrf(req, res, next) {
   if (METODOS_SEGUROS.has(req.method) || req.get('X-Requested-With') === 'fetch') return next();
+  // La API de dispositivos no usa cookies (se autentica con una clave Bearer): no es vulnerable a CSRF
+  if (req.path.startsWith('/integraciones/api/') && /^Bearer sk_dev_/.test(req.get('authorization') || '')) return next();
   return next(new HttpError(403, 'Solicitud rechazada por seguridad'));
 }
 

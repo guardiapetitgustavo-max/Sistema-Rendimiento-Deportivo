@@ -10,7 +10,7 @@ router.get('/resumen', async (req, res) => res.json(await servicio.resumen(acade
 
 router.get('/usuarios', async (req, res) => res.json(await servicio.listar(academia(req))));
 
-router.post('/usuarios', async (req, res) => res.status(201).json(await servicio.crear(academia(req), req.body)));
+router.post('/usuarios', async (req, res) => res.status(201).json(await servicio.crear(academia(req), req.body, req.usuario)));
 
 router.put('/usuarios/:id', async (req, res) =>
   res.json(await servicio.actualizar(req.usuario, academia(req), idValido(req.params.id), req.body)));

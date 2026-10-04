@@ -53,7 +53,9 @@ async function listar(superAdminId) {
              WHERE mm.academia_id = a.id) AS ultima_actividad,
            (SELECT string_agg(u.correo, ', ' ORDER BY u.correo) FROM membresias mm JOIN usuarios u ON u.id = mm.usuario_id
              WHERE mm.academia_id = a.id AND mm.rol = 'admin') AS correos_admin,
-           EXISTS (SELECT 1 FROM membresias mm WHERE mm.academia_id = a.id AND mm.usuario_id = $1 AND mm.activo) AS soy_miembro
+           EXISTS (SELECT 1 FROM membresias mm WHERE mm.academia_id = a.id AND mm.usuario_id = $1 AND mm.activo) AS soy_miembro,
+           (SELECT jsonb_build_object('id', su.id, 'plan', pl.clave, 'nombre', pl.nombre, 'estado', su.estado, 'inicio', su.inicio, 'fin', su.fin)
+              FROM suscripciones su JOIN planes pl ON pl.id = su.plan_id WHERE su.academia_id = a.id AND su.actual) AS suscripcion
     FROM academias a LEFT JOIN membresias m ON m.academia_id = a.id
     GROUP BY a.id
     ORDER BY a.creado_en DESC`, [superAdminId]);
@@ -75,6 +77,11 @@ async function crear(datos) {
       [d.nombre, slugDe(d.nombre)],
     );
     await cliente.query('INSERT INTO academia_config (academia_id) VALUES ($1)', [nueva.id]);
+    const claveP = String(datos.plan || 'PRO').toUpperCase();
+    const { rows: planes } = await cliente.query('SELECT id FROM planes WHERE clave = $1 AND activo', [claveP]);
+    if (!planes.length) throw new HttpError(400, 'Plan no válido');
+    await cliente.query("INSERT INTO suscripciones (academia_id, plan_id, estado) VALUES ($1, $2, $3)",
+      [nueva.id, planes[0].id, datos.estado_suscripcion === 'prueba' ? 'prueba' : 'activa']);
 
     const { rows: existentes } = await cliente.query('SELECT id FROM usuarios WHERE correo = $1', [d.admin_correo]);
     let adminId = existentes[0]?.id;
@@ -120,6 +127,101 @@ async function obtenerAcceso(superAdminId, id) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Planes SaaS, suscripciones y cobros de la plataforma (FASE 9)
+// ---------------------------------------------------------------------------
+const { MODULOS } = require('../../core/modulos');
+const { RECURSOS, resumenUso } = require('../../core/limites');
+
+async function listarPlanes() {
+  const { rows } = await query(`SELECT p.*, (SELECT count(*)::int FROM suscripciones s WHERE s.plan_id = p.id AND s.actual) AS academias
+    FROM planes p ORDER BY p.orden, p.id`);
+  return { planes: rows, recursos: Object.fromEntries(Object.entries(RECURSOS).map(([k, v]) => [k, v.etiqueta])), modulos: MODULOS.map((m) => ({ clave: m.clave, etiqueta: m.etiqueta })) };
+}
+
+/** Crea o modifica un plan. Los límites null = sin límite. */
+async function guardarPlan(datos = {}) {
+  const d = validar({
+    clave: { tipo: 'texto', etiqueta: 'Clave', requerido: true, maxLargo: 20 },
+    nombre: { tipo: 'texto', etiqueta: 'Nombre', requerido: true, maxLargo: 60 },
+    descripcion: { tipo: 'texto', etiqueta: 'Descripción', maxLargo: 300 },
+    precio_mensual: { tipo: 'numero', etiqueta: 'Precio mensual', min: 0, max: 100000 },
+    moneda: { tipo: 'texto', etiqueta: 'Moneda', maxLargo: 3 },
+    orden: { tipo: 'entero', etiqueta: 'Orden', min: 0, max: 100 },
+    activo: { tipo: 'booleano', etiqueta: 'Activo' },
+  }, { activo: true, ...datos });
+  const clave = d.clave.toUpperCase().replace(/[^A-Z0-9_]/g, '');
+  const limites = {};
+  for (const recurso of Object.keys(RECURSOS)) {
+    const v = datos.limites?.[recurso];
+    limites[recurso] = v === null || v === undefined || v === '' ? null : Math.max(0, Number(v));
+    if (Number.isNaN(limites[recurso])) throw new HttpError(400, `Límite no válido: ${recurso}`);
+  }
+  const modulos = (Array.isArray(datos.modulos) ? datos.modulos : []).filter((m) => MODULOS.some((x) => x.clave === m));
+  const { rows } = await query(
+    `INSERT INTO planes (clave, nombre, descripcion, precio_mensual, moneda, limites, modulos, orden, activo)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (clave) DO UPDATE SET nombre = EXCLUDED.nombre, descripcion = EXCLUDED.descripcion, precio_mensual = EXCLUDED.precio_mensual,
+       moneda = EXCLUDED.moneda, limites = EXCLUDED.limites, modulos = EXCLUDED.modulos, orden = EXCLUDED.orden, activo = EXCLUDED.activo
+     RETURNING *`,
+    [clave, d.nombre, d.descripcion, d.precio_mensual ?? 0, (d.moneda || 'USD').toUpperCase(), JSON.stringify(limites), JSON.stringify(modulos), d.orden ?? 0, d.activo],
+  );
+  return rows[0];
+}
+
+/** Cambia el plan o el estado de la suscripción: la anterior se conserva en el historial (actual = false). */
+async function cambiarSuscripcion(academiaId, datos = {}) {
+  await academia(academiaId);
+  const estado = datos.estado || 'activa';
+  if (!['prueba', 'activa', 'vencida', 'suspendida', 'cancelada'].includes(estado)) throw new HttpError(400, 'Estado de suscripción no válido');
+  const { rows: planes } = await query('SELECT id FROM planes WHERE clave = $1', [String(datos.plan || '').toUpperCase()]);
+  if (!planes.length) throw new HttpError(400, 'Plan no válido');
+  const fin = datos.fin ? validar({ fin: { tipo: 'fecha', etiqueta: 'Fin' } }, { fin: datos.fin }).fin : null;
+  return transaccion(async (cliente) => {
+    await cliente.query('UPDATE suscripciones SET actual = false WHERE academia_id = $1 AND actual', [academiaId]);
+    const { rows } = await cliente.query(
+      'INSERT INTO suscripciones (academia_id, plan_id, estado, fin, notas) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [academiaId, planes[0].id, estado, fin, datos.notas ? String(datos.notas).slice(0, 300) : null],
+    );
+    return rows[0];
+  });
+}
+
+async function historialSuscripciones(academiaId) {
+  const { rows } = await query(
+    `SELECT s.*, to_char(s.inicio, 'YYYY-MM-DD') AS inicio, to_char(s.fin, 'YYYY-MM-DD') AS fin, p.clave AS plan, p.nombre AS plan_nombre, p.limites
+     FROM suscripciones s JOIN planes p ON p.id = s.plan_id WHERE s.academia_id = $1 ORDER BY s.id DESC`, [academiaId],
+  );
+  const actual = rows.find((r) => r.actual);
+  return { historial: rows, uso: await resumenUso(academiaId, actual?.limites || {}) };
+}
+
+async function registrarPagoPlataforma(usuarioId, academiaId, datos = {}) {
+  await academia(academiaId);
+  const d = validar({
+    monto: { tipo: 'numero', etiqueta: 'Monto', requerido: true, min: 0 },
+    moneda: { tipo: 'texto', etiqueta: 'Moneda', maxLargo: 3 },
+    fecha: { tipo: 'fecha', etiqueta: 'Fecha' },
+    metodo: { tipo: 'texto', etiqueta: 'Método', maxLargo: 40 },
+    referencia: { tipo: 'texto', etiqueta: 'Referencia', maxLargo: 80 },
+  }, datos);
+  const { rows } = await query(
+    `INSERT INTO pagos_plataforma (academia_id, suscripcion_id, monto, moneda, fecha, metodo, referencia, registrado_por)
+     VALUES ($1, (SELECT id FROM suscripciones WHERE academia_id = $1 AND actual), $2, $3, coalesce($4, CURRENT_DATE), $5, $6, $7) RETURNING *`,
+    [academiaId, d.monto, (d.moneda || 'USD').toUpperCase(), d.fecha, d.metodo, d.referencia, usuarioId],
+  );
+  return rows[0];
+}
+
+async function pagosPlataforma() {
+  const { rows } = await query(
+    `SELECT p.*, to_char(p.fecha, 'YYYY-MM-DD') AS fecha, a.nombre AS academia FROM pagos_plataforma p JOIN academias a ON a.id = p.academia_id
+     ORDER BY p.fecha DESC, p.id DESC LIMIT 500`,
+  );
+  return rows;
+}
+
 module.exports = {
   resumen, listar, crear, actualizar, obtenerAcceso,
+  listarPlanes, guardarPlan, cambiarSuscripcion, historialSuscripciones, registrarPagoPlataforma, pagosPlataforma,
 };

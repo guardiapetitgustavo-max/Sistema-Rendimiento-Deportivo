@@ -404,7 +404,7 @@ test('flujo completo de la API', { skip: !URL_PRUEBAS && 'define TEST_DATABASE_U
     r = await adminB('POST', '/admin/usuarios', { nombre: 'Mamá de Lucía', correo: `mama${sello}@t.pe`, password: 'mama1234', rol: 'padre', deportistas: [depB] });
     ok(r.status === 201, 'admin B crea cuenta de padre vinculada', r.datos);
     r = await atleta('POST', '/auth/login', { correo: `lucia${sello}@t.pe`, password: 'lucia123' });
-    ok(r.status === 200 && r.datos.rol === 'deportista' && r.datos.permisos.join() === 'portal.ver', 'deportista solo tiene el portal', r.datos.permisos);
+    ok(r.status === 200 && r.datos.rol === 'deportista' && r.datos.permisos.every((p) => p.startsWith('portal.') || p === 'comunicados.ver') && r.datos.permisos.includes('portal.ver'), 'deportista solo tiene el portal', r.datos.permisos);
     r = await atleta('GET', '/portal/deportistas');
     ok(r.datos.length === 1 && r.datos[0].id === depB, 'deportista ve su ficha', r.datos);
     r = await atleta('GET', `/portal/deportistas/${depB}`);

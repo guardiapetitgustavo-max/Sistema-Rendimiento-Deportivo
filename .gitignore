@@ -4,3 +4,6 @@ node_modules/
 .vercel
 .DS_Store
 npm-debug.log*
+__pycache__/
+*.pyc
+almacenamiento/

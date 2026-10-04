@@ -8,6 +8,11 @@ const { rutinaAPdf } = require('../reportes/exportar');
 
 const router = rutasCrud(servicio);
 
+router.get('/:id/foto', async (req, res) => {
+  const { tipo, contenido } = await servicio.foto(req.alcance, idValido(req.params.id));
+  res.set('Cache-Control', 'private, max-age=300').type(tipo).send(contenido);
+});
+
 router.get('/:id/perfil', async (req, res) => res.json(await obtenerPerfil(req.alcance, idValido(req.params.id))));
 
 router.get('/:id/rutina', async (req, res) => {

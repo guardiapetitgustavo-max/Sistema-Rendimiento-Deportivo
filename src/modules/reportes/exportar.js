@@ -42,8 +42,8 @@ function crearPdf(opciones, dibujar) {
   });
 }
 
-function encabezado(doc, titulo, subtitulo) {
-  doc.fillColor(COLOR_PRIMARIO).font('Helvetica-Bold').fontSize(16).text(ACADEMIA);
+function encabezado(doc, titulo, subtitulo, marca = null) {
+  doc.fillColor(marca?.color || COLOR_PRIMARIO).font('Helvetica-Bold').fontSize(16).text(marca?.nombre ? `${marca.nombre} · SportEval AI` : ACADEMIA);
   doc.fontSize(12).text(titulo);
   doc.fillColor('#555555').font('Helvetica').fontSize(8)
     .text(`Generado el ${formatearFecha(hoyISO())}. ${subtitulo}`);
@@ -93,9 +93,10 @@ function tabla(doc, columnas, filas, { tamano = 7.5 } = {}) {
   doc.moveDown(0.8);
 }
 
-function reporteAPdf({ titulo, columnas, filas }) {
+/** @param marca { nombre, color } de la academia (branding del reporte) */
+function reporteAPdf({ titulo, columnas, filas, nota }, marca = null) {
   return crearPdf({ layout: 'landscape' }, (doc) => {
-    encabezado(doc, titulo, 'Documento de apoyo al entrenamiento basado en observación directa. No constituye diagnóstico médico.');
+    encabezado(doc, titulo, nota || 'Documento de apoyo al entrenamiento basado en datos registrados. No constituye diagnóstico médico.', marca);
     if (filas.length) tabla(doc, columnas, filas);
     else doc.font('Helvetica').fontSize(10).fillColor('#222222').text('No hay datos para este reporte.');
   });

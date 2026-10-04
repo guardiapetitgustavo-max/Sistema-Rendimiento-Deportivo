@@ -9,6 +9,97 @@ import {
 } from '../ui.js';
 import { recargarVista } from '../navegacion.js';
 import { tarjetaDato } from './dashboard.js';
+import { campos, tabla, insignia } from '../formularios.js';
+
+let PLANES = [];
+let CATALOGO = { recursos: {}, modulos: [] };
+
+/** Plan y suscripción de una academia, con su uso frente a los límites del plan. */
+async function suscripcion(a) {
+  const r = await api.get(`/plataforma/academias/${a.id}/suscripcion`);
+  const actual = r.historial.find((h) => h.actual);
+  modalFormulario({
+    titulo: `Plan de ${a.nombre}`,
+    tamano: 'modal-lg',
+    boton: 'Cambiar plan',
+    cuerpo: html`<div class="mb-3">${tabla(Object.entries(r.uso), [
+      { titulo: 'Recurso', valor: ([k]) => CATALOGO.recursos[k] || k },
+      { titulo: 'Uso', valor: ([, u]) => u.uso },
+      { titulo: 'Límite', valor: ([, u]) => (u.limite === null ? 'Sin límite' : u.limite) },
+    ])}</div>
+      ${campos([
+    { nombre: 'plan', etiqueta: 'Plan', tipo: 'select', vacia: false, opciones: PLANES.map((p) => ({ valor: p.clave, texto: `${p.nombre} (${p.moneda} ${p.precio_mensual}/mes)` })) },
+    { nombre: 'estado', etiqueta: 'Estado', tipo: 'select', vacia: false, opciones: ['activa', 'prueba', 'vencida', 'suspendida', 'cancelada'].map((e) => ({ valor: e, texto: e })) },
+    { nombre: 'fin', etiqueta: 'Vence el', tipo: 'fecha' },
+    { nombre: 'notas', etiqueta: 'Notas' },
+  ], { plan: actual?.plan, estado: actual?.estado, fin: actual?.fin })}
+      <div class="small text-muted mt-3">Historial: ${r.historial.map((h) => `${h.plan_nombre} (${h.estado}, desde ${fecha(h.inicio)})`).join(' → ')}</div>`,
+    alGuardar: async (datos) => {
+      await api.post(`/plataforma/academias/${a.id}/suscripcion`, datos);
+      avisar('Suscripción actualizada.');
+      recargarVista();
+    },
+  });
+}
+
+function cobro(a) {
+  modalFormulario({
+    titulo: `Registrar cobro a ${a.nombre}`,
+    cuerpo: campos([{ nombre: 'monto', etiqueta: 'Monto', tipo: 'numero', requerido: true, min: 0 }, { nombre: 'moneda', etiqueta: 'Moneda', defecto: 'USD' },
+      { nombre: 'fecha', etiqueta: 'Fecha', tipo: 'fecha' }, { nombre: 'metodo', etiqueta: 'Método' }, { nombre: 'referencia', etiqueta: 'Referencia', col: 'col-12' }]),
+    alGuardar: async (datos) => { await api.post(`/plataforma/academias/${a.id}/pagos`, datos); avisar('Cobro registrado.'); },
+  });
+}
+
+function editarPlanes() {
+  const plan = (p) => html`<div class="border rounded p-3 mb-3" data-plan="${p.clave}">
+    <div class="row g-2">${campos([
+    { nombre: `${p.clave}__nombre`, etiqueta: 'Nombre', col: 'col-md-4' },
+    { nombre: `${p.clave}__precio_mensual`, etiqueta: 'Precio mensual', tipo: 'numero', col: 'col-md-4' },
+    { nombre: `${p.clave}__moneda`, etiqueta: 'Moneda', col: 'col-md-4' },
+  ], { [`${p.clave}__nombre`]: p.nombre, [`${p.clave}__precio_mensual`]: p.precio_mensual, [`${p.clave}__moneda`]: p.moneda })}</div>
+    <div class="small fw-semibold mt-2">Límites (vacío = sin límite)</div>
+    <div class="row g-2">${Object.entries(CATALOGO.recursos).map(([k, t]) => html`<div class="col-6 col-md-3"><label class="form-label small mb-0">${t}</label>
+      <input class="form-control form-control-sm" type="number" min="0" name="${p.clave}__lim__${k}" value="${p.limites?.[k] ?? ''}"></div>`)}</div>
+    <div class="small fw-semibold mt-2">Módulos incluidos</div>
+    <div class="d-flex flex-wrap gap-3">${CATALOGO.modulos.map((m) => html`<label class="form-check small"><input class="form-check-input" type="checkbox" name="${p.clave}__mod__${m.clave}" ${p.modulos.includes(m.clave) ? 'checked' : ''}> ${m.etiqueta}</label>`)}</div>
+  </div>`;
+  modalFormulario({
+    titulo: 'Planes de la plataforma',
+    tamano: 'modal-xl',
+    cuerpo: html`${PLANES.map((p) => html`<h3 class="h6 fw-bold">${p.clave} ${insignia(`${p.academias} academias`, 'light')}</h3>${plan(p)}`)}`,
+    alGuardar: async (datos) => {
+      for (const p of PLANES) {
+        await api.post('/plataforma/planes', {
+          clave: p.clave, nombre: datos[`${p.clave}__nombre`], precio_mensual: datos[`${p.clave}__precio_mensual`], moneda: datos[`${p.clave}__moneda`], orden: p.orden,
+          limites: Object.fromEntries(Object.keys(CATALOGO.recursos).map((k) => [k, datos[`${p.clave}__lim__${k}`] === '' ? null : Number(datos[`${p.clave}__lim__${k}`])])),
+          modulos: CATALOGO.modulos.map((m) => m.clave).filter((m) => datos[`${p.clave}__mod__${m}`] === true),
+        });
+      }
+      avisar('Planes actualizados: los límites y módulos se aplican al instante.');
+      recargarVista();
+    },
+  });
+}
+
+async function crearDemo(boton) {
+  if (!await confirmar(html`Se creará (o se volverá a crear) <b>Sport Academy Demo</b> con 36 deportistas de Fútbol, Natación y Atletismo, 3 coaches,
+    evaluaciones de 4 meses, entrenamientos, asistencia, recuperación, objetivos, pagos y alertas. <b>Los datos son sintéticos.</b>`, { titulo: 'Academia demo', boton: 'Crear demo' })) return;
+  boton.disabled = true;
+  try {
+    const r = await api.post('/plataforma/demo');
+    mostrarInfo({
+      titulo: 'Academia demo lista',
+      cuerpo: html`<p>${r.deportistas} deportistas, ${r.resultados} resultados, ${r.entrenamientos} entrenamientos y ${r.alertas} alertas en ${(r.duracion_ms / 1000).toFixed(1)} s.</p>
+        <p class="small mb-1">Cuentas (contraseña <code>${r.clave}</code>):</p><ul class="small">${r.cuentas.map((c) => html`<li><code>${c}</code></li>`)}</ul>
+        <p class="small text-muted mb-0">Tú ya eres administrador de la demo: cámbiala desde tu menú de usuario.</p>`,
+    }).addEventListener('hidden.bs.modal', () => window.dispatchEvent(new CustomEvent('sesion-cambiada')));
+  } catch (error) {
+    mostrarError(error);
+  } finally {
+    boton.disabled = false;
+  }
+}
 
 function mostrarCreada(creada) {
   const ventana = mostrarInfo({
@@ -50,6 +141,10 @@ function nuevaAcademia() {
       <div class="col-12"><label class="form-label small fw-semibold">Contraseña temporal</label>
         <input class="form-control" name="admin_password" type="text" minlength="6" autocomplete="off" placeholder="Vacía = se genera una segura">
         <div class="form-text">Si el correo ya tiene cuenta, se conserva su contraseña.</div></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Plan</label>
+        <select class="form-select" name="plan">${PLANES.map((p) => html`<option value="${p.clave}" ${p.clave === 'PRO' ? 'selected' : ''}>${p.nombre}</option>`)}</select></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Suscripción</label>
+        <select class="form-select" name="estado_suscripcion"><option value="activa">Activa</option><option value="prueba">Prueba</option></select></div>
     </div>`,
     alGuardar: async (datos) => {
       const creada = await api.post('/plataforma/academias', datos);
@@ -105,10 +200,14 @@ async function pedirAcceso(a) {
 }
 
 export async function render(vista) {
-  const [resumen, academias] = await Promise.all([api.get('/plataforma/resumen'), api.get('/plataforma/academias')]);
+  const [resumen, academias, planes] = await Promise.all([api.get('/plataforma/resumen'), api.get('/plataforma/academias'), api.get('/plataforma/planes')]);
+  PLANES = planes.planes;
+  CATALOGO = planes;
 
   montar(vista, html`
     ${encabezado('buildings', 'Plataforma', 'Academias que usan SportEval AI', html`
+      <button class="btn btn-light" data-accion="demo"><i class="bi bi-magic me-1"></i>Academia demo</button>
+      <button class="btn btn-light" data-accion="planes"><i class="bi bi-boxes me-1"></i>Planes</button>
       <button class="btn btn-primary" data-accion="nueva"><i class="bi bi-plus-lg me-1"></i>Nueva academia</button>`)}
     <div class="row g-3 mb-4">
       ${tarjetaDato('buildings', 'azul', resumen.academias_activas, `Academias activas de ${resumen.academias}`)}
@@ -124,6 +223,7 @@ export async function render(vista) {
       <tbody>${academias.length ? academias.map((a) => html`<tr class="${a.estado === 'activa' ? '' : 'fila-inactiva'}">
         <td><div class="fw-semibold">${a.nombre}</div><div class="small text-muted">${a.correos_admin || 'Sin administrador'} · desde ${fecha(a.creado_en.slice(0, 10))}</div></td>
         <td>${a.estado === 'activa' ? html`<span class="badge text-bg-success">Activa</span>` : html`<span class="badge text-bg-danger">Suspendida</span>`}
+          ${a.suscripcion ? html`<div class="small text-muted">${a.suscripcion.nombre} · ${a.suscripcion.estado}</div>` : ''}
           ${a.soy_miembro ? html`<span class="badge text-bg-light border ms-1">Eres miembro</span>` : ''}</td>
         <td class="text-center">${a.administradores}</td><td class="text-center">${a.coaches}</td>
         <td class="text-center">${a.deportistas}</td><td class="text-center">${a.evaluaciones}</td>
@@ -134,6 +234,8 @@ export async function render(vista) {
           <ul class="dropdown-menu dropdown-menu-end">
             <li><button class="dropdown-item" data-accion="editar" data-id="${a.id}"><i class="bi bi-pencil me-2"></i>Cambiar nombre</button></li>
             <li><button class="dropdown-item" data-accion="acceso" data-id="${a.id}" ${a.estado === 'activa' ? '' : 'disabled'}><i class="bi bi-box-arrow-in-right me-2"></i>${a.soy_miembro ? 'Entrar a la academia' : 'Acceder a los datos'}</button></li>
+            <li><button class="dropdown-item" data-accion="plan" data-id="${a.id}"><i class="bi bi-boxes me-2"></i>Plan y uso</button></li>
+            <li><button class="dropdown-item" data-accion="cobro" data-id="${a.id}"><i class="bi bi-cash me-2"></i>Registrar cobro</button></li>
             <li><hr class="dropdown-divider"></li>
             <li><button class="dropdown-item ${a.estado === 'activa' ? 'text-danger' : 'text-success'}" data-accion="estado" data-id="${a.id}">
               <i class="bi bi-${a.estado === 'activa' ? 'pause-circle' : 'play-circle'} me-2"></i>${a.estado === 'activa' ? 'Suspender' : 'Reactivar'}</button></li>
@@ -149,5 +251,9 @@ export async function render(vista) {
     if (boton.dataset.accion === 'editar') editarAcademia(a);
     if (boton.dataset.accion === 'estado') cambiarEstado(a);
     if (boton.dataset.accion === 'acceso') pedirAcceso(a);
+    if (boton.dataset.accion === 'plan') suscripcion(a).catch(mostrarError);
+    if (boton.dataset.accion === 'cobro') cobro(a);
+    if (boton.dataset.accion === 'planes') editarPlanes();
+    if (boton.dataset.accion === 'demo') crearDemo(boton);
   });
 }

@@ -246,7 +246,12 @@ describe('permisos, módulos y auditoría (FASE 1)', () => {
     assert.ok(permisos.efectivos('coach').includes('evaluaciones.gestionar'));
     assert.ok(!permisos.efectivos('coach').includes('usuarios.gestionar'));
     assert.ok(!permisos.efectivos('coach', { 'evaluaciones.gestionar': false }).includes('evaluaciones.gestionar'));
-    assert.deepEqual(permisos.efectivos('deportista'), ['portal.ver']);
+    assert.deepEqual(permisos.efectivos('deportista').sort(),
+      ['comunicados.ver', 'portal.asistencia', 'portal.nutricion', 'portal.recuperacion', 'portal.ver', 'portal.videos']);
+    // Ningún permiso del deportista ni del padre modifica resultados oficiales
+    for (const rol of ['deportista', 'padre']) {
+      assert.ok(permisos.efectivos(rol).every((p) => p.startsWith('portal.') || p === 'comunicados.ver'));
+    }
     assert.deepEqual(permisos.efectivos('desconocido'), []);
   });
 

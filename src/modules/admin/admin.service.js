@@ -10,6 +10,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('node:crypto');
 const { query, transaccion } = require('../../db/pool');
 const { HttpError, noEncontrado } = require('../../utils/http-error');
+const { verificarLimite } = require('../../core/limites');
 const { validar } = require('../../utils/validar');
 const { ROLES_ACADEMIA } = require('../../core/permisos');
 
@@ -23,7 +24,7 @@ const esquemaCuenta = {
 };
 
 function validarRol(rol) {
-  if (rol && !ROLES_ACADEMIA.includes(rol)) throw new HttpError(400, 'El rol debe ser administrador, coach, deportista o padre');
+  if (rol && !ROLES_ACADEMIA.includes(rol)) throw new HttpError(400, 'El rol debe ser administrador, coach, profesional, deportista o padre');
   return rol || 'coach';
 }
 
@@ -115,7 +116,7 @@ async function listar(academia) {
            END AS vinculos
     FROM membresias m JOIN usuarios u ON u.id = m.usuario_id
     WHERE m.academia_id = $1
-    ORDER BY array_position(ARRAY['admin', 'coach', 'deportista', 'padre'], m.rol), m.activo DESC, u.nombre`,
+    ORDER BY array_position(ARRAY['admin', 'coach', 'profesional', 'deportista', 'padre'], m.rol), m.activo DESC, u.nombre`,
   [academia]);
   return rows;
 }
@@ -158,9 +159,10 @@ async function vincular(cliente, academia, cuenta, ids = []) {
  * Crea un miembro. Si el correo ya tiene cuenta (en otra academia), solo se le da acceso a esta
  * academia con su contraseña de siempre; si es nuevo, se genera una contraseña temporal.
  */
-async function crear(academia, datos) {
+async function crear(academia, datos, usuario = null) {
   const d = validar(esquemaCuenta, datos);
   const rol = validarRol(d.rol);
+  if (rol === 'coach' && usuario) await verificarLimite(usuario, 'coaches');
 
   return transaccion(async (cliente) => {
     const { rows: existentes } = await cliente.query('SELECT id FROM usuarios WHERE correo = $1', [d.correo]);

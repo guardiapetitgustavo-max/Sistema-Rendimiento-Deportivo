@@ -14,7 +14,20 @@ const env = {
     openaiKey: (process.env.OPENAI_API_KEY || '').trim(),
     openaiModelo: process.env.OPENAI_MODEL || 'gpt-4o-mini',
   },
+  // Almacenamiento de videos: Supabase Storage (producción) o una carpeta local (solo desarrollo y pruebas)
+  almacenamiento: {
+    supabaseUrl: (process.env.SUPABASE_URL || '').trim().replace(/\/$/, ''),
+    supabaseClave: (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim(),
+    bucket: (process.env.SUPABASE_BUCKET || 'videos').trim(),
+    carpetaLocal: esProduccion ? '' : (process.env.ALMACENAMIENTO_LOCAL || '').trim(),
+    maxMb: Number(process.env.VIDEO_MAX_MB) || 200,
+  },
+  // Tareas programadas (Vercel Cron envía "Authorization: Bearer CRON_SECRET")
+  cronSecret: (process.env.CRON_SECRET || '').trim(),
 };
+env.almacenamiento.proveedor = env.almacenamiento.supabaseUrl && env.almacenamiento.supabaseClave
+  ? 'supabase' : (env.almacenamiento.carpetaLocal ? 'local' : null);
+env.almacenamiento.configurado = Boolean(env.almacenamiento.proveedor);
 
 const faltantes = [];
 if (!env.databaseUrl) faltantes.push('DATABASE_URL');

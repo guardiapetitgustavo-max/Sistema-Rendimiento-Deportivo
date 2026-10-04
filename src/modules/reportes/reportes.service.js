@@ -104,10 +104,65 @@ function individual(academia, deportistaId) {
 }
 
 const GENERADORES = { general, ranking, seguimiento, evolucion, estadisticas };
-const TIPOS = [...Object.keys(GENERADORES), 'individual'];
+
+// ---- Reportes con los datos de medición reales (fases 3-6)
+const { query } = require('../../db/pool');
+const { condicionDeportista } = require('../../core/alcance');
+const M = require('../../domain/medicion');
+
+/** Mejor marca oficial de cada deportista en cada prueba y contexto (nunca mezcla contextos). */
+async function marcas(alcance) {
+  const { rows } = await query(
+    `SELECT d.codigo, d.nombre, p.nombre AS prueba, r.valor, r.unidad, r.datos, r.prueba_id, to_char(r.fecha, 'YYYY-MM-DD') AS fecha, r.fuente_medicion,
+            m.direccion_mejora, m.tipo_resultado, m.decimales, m.rango_min, m.rango_max
+     FROM resultados r JOIN deportistas d ON d.id = r.deportista_id JOIN pruebas p ON p.id = r.prueba_id JOIN metricas m ON m.id = r.metrica_id
+     WHERE r.activo AND r.oficial AND d.activo AND ${condicionDeportista('d', '$1', '$2')} ORDER BY p.nombre, d.nombre, r.fecha`,
+    [alcance.academia, alcance.coach],
+  );
+  const mejores = new Map();
+  for (const r of rows) {
+    const k = `${r.codigo}|${M.claveComparacion(r)}`;
+    const actual = mejores.get(k);
+    if (!actual || M.esMejor(r.valor, actual.valor, r.direccion_mejora, { min: r.rango_min, max: r.rango_max })) mejores.set(k, { ...r, mediciones: (actual?.mediciones || 0) + 1 });
+    else actual.mediciones += 1;
+  }
+  return {
+    titulo: 'Mejores marcas oficiales por deportista y prueba',
+    nota: 'Solo resultados oficiales; los de distinto contexto (p. ej. piscina de 25 y 50 m) se informan por separado.',
+    columnas: ['Prueba', 'Contexto', 'Código', 'Deportista', 'Mejor marca', 'Fecha', 'Mediciones', 'Fuente'],
+    filas: [...mejores.values()].map((r) => [r.prueba, r.datos?.largo_piscina ? `Piscina ${r.datos.largo_piscina} m` : '', r.codigo, r.nombre,
+      M.formatearValor(r.valor, { tipo: r.tipo_resultado, unidad: r.unidad, decimales: r.decimales }), formatearFecha(r.fecha), r.mediciones, r.fuente_medicion]),
+  };
+}
+
+async function asistencia(alcance) {
+  const est = await require('../entrenamiento/entrenamiento.service').estadisticas(alcance, {
+    desde: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
+  });
+  return {
+    titulo: 'Asistencia de los últimos 30 días',
+    nota: '% de asistencia = (presentes + tardanzas) / registros sin justificados. Carga = RPE × minutos (sRPE).',
+    columnas: ['Código', 'Deportista', '% asistencia', 'Presentes', 'Tardanzas', 'Ausencias', 'Justificadas', 'Carga total (UA)'],
+    filas: est.deportistas.map((d) => [d.codigo, d.deportista, d.porcentaje ?? '', d.presentes, d.tardanzas, d.ausencias, d.justificadas, d.carga_total_srpe ?? '']),
+  };
+}
+
+async function alertas(alcance) {
+  const lista = await require('../inteligencia/inteligencia.service').listarAlertas(alcance, { estado: 'nueva,vista,resuelta' });
+  return {
+    titulo: 'Alertas del rendimiento',
+    nota: 'Generadas por reglas configurables con los datos registrados. Seguimiento, no diagnóstico médico.',
+    columnas: ['Fecha', 'Deportista', 'Tipo', 'Prioridad', 'Estado', 'Motivo'],
+    filas: lista.map((a) => [formatearFecha(String(a.creado_en.toISOString?.() || a.creado_en).slice(0, 10)), a.deportista || '', a.titulo, a.prioridad, a.estado, a.motivo]),
+  };
+}
+
+const GENERADORES_DATOS = { marcas, asistencia, alertas };
+const TIPOS = [...Object.keys(GENERADORES), ...Object.keys(GENERADORES_DATOS), 'individual'];
 
 async function generar(alcance, tipo, deportistaId) {
   if (!TIPOS.includes(tipo)) throw solicitudInvalida(`Tipo de reporte desconocido: ${tipo}`);
+  if (GENERADORES_DATOS[tipo]) return GENERADORES_DATOS[tipo](alcance);
   const academia = await deportistas.cargarAcademia(alcance);
   return tipo === 'individual' ? individual(academia, deportistaId) : GENERADORES[tipo](academia, { conCoach: alcance.coach === null });
 }
@@ -115,7 +170,9 @@ async function generar(alcance, tipo, deportistaId) {
 /** Datos para la pantalla de reportes. */
 async function resumen(alcance) {
   const academia = await deportistas.cargarAcademia(alcance);
-  return Object.fromEntries(Object.entries(GENERADORES).map(([tipo, fn]) => [tipo, fn(academia, { conCoach: alcance.coach === null })]));
+  const datos = Object.fromEntries(Object.entries(GENERADORES).map(([tipo, fn]) => [tipo, fn(academia, { conCoach: alcance.coach === null })]));
+  for (const [tipo, fn] of Object.entries(GENERADORES_DATOS)) datos[tipo] = await fn(alcance);
+  return datos;
 }
 
 module.exports = { TIPOS, generar, resumen };

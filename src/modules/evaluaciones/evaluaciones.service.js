@@ -4,6 +4,7 @@ const { validar } = require('../../utils/validar');
 const { hoyISO } = require('../../utils/valores');
 const { CAPACIDADES, calcularPuntuacion } = require('../../domain/rendimiento');
 const deportistas = require('../deportistas/deportistas.service');
+const { condicionDeportista } = require('../../core/alcance');
 
 const puntaje = (etiqueta) => ({ tipo: 'numero', etiqueta, min: 0, max: 100 });
 
@@ -70,7 +71,7 @@ async function listar(alcance, filtros = {}) {
     valores.push(valor);
     return `$${valores.length}`;
   };
-  const condiciones = ['d.academia_id = $1', '($2::int IS NULL OR d.usuario_id = $2)', 'd.activo', 'e.activa'];
+  const condiciones = [condicionDeportista('d', '$1', '$2'), 'd.activo', 'e.activa'];
 
   if (filtros.q) {
     const p = param(filtros.q);
@@ -96,7 +97,7 @@ async function obtener(alcance, id) {
   const { rows } = await query(
     `SELECT e.*, d.codigo, d.nombre, d.categoria, d.disciplina
      FROM evaluaciones e JOIN deportistas d ON d.id = e.deportista_id
-     WHERE e.id = $1 AND d.academia_id = $2 AND ($3::int IS NULL OR d.usuario_id = $3) AND e.activa AND d.activo`,
+     WHERE e.id = $1 AND ${condicionDeportista('d', '$2', '$3')} AND e.activa AND d.activo`,
     [id, alcance.academia, alcance.coach],
   );
   if (!rows.length) throw noEncontrado('Evaluación');

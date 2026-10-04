@@ -10,6 +10,7 @@ const { validar } = require('../../utils/validar');
 const TABLAS_DEPORTIVAS = ['evaluaciones', 'alimentacion', 'predicciones'];
 
 const { publico } = require('../auth/auth.service');
+const { condicionDeportista } = require('../../core/alcance');
 
 async function actualizarPerfil(usuarioId, datos) {
   const { nombre } = validar({ nombre: { tipo: 'texto', etiqueta: 'Nombre', requerido: true, maxLargo: 120 } }, datos);
@@ -40,7 +41,7 @@ async function cambiarPassword(usuarioId, datos) {
  */
 async function respaldo(alcance, usuario) {
   const { rows: listaDeportistas } = await query(
-    'SELECT * FROM deportistas WHERE academia_id = $1 AND ($2::int IS NULL OR usuario_id = $2) ORDER BY id',
+    `SELECT * FROM deportistas d WHERE ${condicionDeportista('d', '$1', '$2')} ORDER BY id`,
     [alcance.academia, alcance.coach],
   );
   const ids = listaDeportistas.map((d) => d.id);

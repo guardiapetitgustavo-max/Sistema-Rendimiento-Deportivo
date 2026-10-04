@@ -142,3 +142,47 @@ export function radar(lienzo, etiquetas, valores) {
     },
   });
 }
+
+/**
+ * Serie de mediciones reales (segundos, metros, cm…) con su propia escala.
+ * Si menos es mejor (tiempos) el eje se invierte para que "subir" siempre signifique mejorar.
+ */
+export function serieMedicion(lienzo, etiquetas, series, { invertir = false, unidad = '' } = {}) {
+  const colores = [COLORES.acento, COLORES.amarillo, COLORES.verde, COLORES.violeta, COLORES.rojo, COLORES.claro];
+  return crear(lienzo, {
+    type: 'line',
+    data: {
+      labels: etiquetas,
+      datasets: series.map((s, i) => ({
+        label: s.nombre,
+        data: s.valores,
+        borderColor: s.color || colores[i % colores.length],
+        backgroundColor: 'transparent',
+        tension: 0.25,
+        spanGaps: true,
+        borderWidth: s.punteada ? 1.5 : 2.5,
+        borderDash: s.punteada ? [6, 4] : [],
+        pointRadius: s.punteada ? 0 : 4,
+        pointBackgroundColor: paleta().superficie,
+        pointBorderWidth: 2,
+      })),
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        y: { reverse: invertir, border: { display: false }, title: { display: Boolean(unidad), text: unidad } },
+        x: { grid: { display: false } },
+      },
+      plugins: { legend: { display: series.length > 1, position: 'bottom' } },
+    },
+  });
+}
+
+/** Barras con escala libre (cargas, conteos…). */
+export function barrasLibres(lienzo, etiquetas, valores, { color = COLORES.acento, etiqueta = '' } = {}) {
+  return crear(lienzo, {
+    type: 'bar',
+    data: { labels: etiquetas, datasets: [{ label: etiqueta, data: valores, backgroundColor: color, borderRadius: 6, maxBarThickness: 36 }] },
+    options: { scales: { y: { beginAtZero: true, border: { display: false } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } },
+  });
+}

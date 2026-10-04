@@ -34,6 +34,16 @@ import * as permisos from './views/permisos.js';
 import * as auditoria from './views/auditoria.js';
 import * as plataforma from './views/plataforma.js';
 import * as portal from './views/portal.js';
+import * as estructura from './views/estructura.js';
+import * as metodologia from './views/metodologia.js';
+import * as medicion from './views/medicion.js';
+import * as rendimiento from './views/rendimiento.js';
+import * as entrenamiento from './views/entrenamiento.js';
+import * as inteligencia from './views/inteligencia.js';
+import * as videos from './views/videos.js';
+import * as nutricion from './views/nutricion.js';
+import * as comercial from './views/comercial.js';
+import * as integraciones from './views/integraciones.js';
 
 /**
  * Cada opción declara qué necesita para verse: un permiso, un módulo activo o ser super admin.
@@ -43,20 +53,35 @@ const MENU = [
   { titulo: 'Operación' },
   { ruta: '/dashboard', icono: 'grid-1x2', texto: 'Dashboard', permiso: 'dashboard.ver' },
   { ruta: '/deportistas', icono: 'people', texto: 'Deportistas', permiso: 'deportistas.ver' },
-  { ruta: '/evaluaciones', icono: 'clipboard2-pulse', texto: 'Evaluaciones', permiso: 'evaluaciones.ver' },
+  { ruta: '/medicion', icono: 'stopwatch', texto: 'Modo Medición', permiso: 'resultados.ver' },
+  { ruta: '/entrenamientos', icono: 'calendar-week', texto: 'Entrenamientos', permiso: 'entrenamientos.ver' },
+  { ruta: '/asistencia', icono: 'person-check', texto: 'Asistencia', permiso: 'asistencia.ver' },
+  { ruta: '/recuperacion', icono: 'heart-pulse', texto: 'Recuperación', permiso: 'recuperacion.ver' },
+  { ruta: '/objetivos', icono: 'bullseye', texto: 'Objetivos', permiso: 'objetivos.ver' },
+  { ruta: '/evaluaciones', icono: 'clipboard2-pulse', texto: 'Evaluación por observación', permiso: 'evaluaciones.ver' },
   { ruta: '/importar', icono: 'cloud-arrow-up', texto: 'Importar Excel', permiso: 'importacion.usar' },
   { titulo: 'Mi progreso' },
   { ruta: '/portal', icono: 'graph-up-arrow', texto: 'Mi progreso', permiso: 'portal.ver' },
-  { titulo: 'Inteligencia' },
+  { titulo: 'Rendimiento e inteligencia' },
+  { ruta: '/rendimiento', icono: 'graph-up-arrow', texto: 'Rendimiento', permiso: 'rendimiento.ver' },
+  { ruta: '/alertas', icono: 'bell', texto: 'Alertas', permiso: 'alertas.ver' },
+  { ruta: '/analisis', icono: 'stars', texto: 'Análisis IA', permiso: 'ia.analizar', modulo: 'ia_analisis' },
+  { ruta: '/videos', icono: 'camera-video', texto: 'Videos', permiso: 'videos.ver', modulo: 'video' },
+  { ruta: '/ia', icono: 'chat-dots', texto: 'Asistente IA', permiso: 'ia.usar', modulo: 'ia' },
   { ruta: '/ml', icono: 'cpu', texto: 'Machine Learning', permiso: 'ml.usar', modulo: 'ml' },
-  { ruta: '/ia', icono: 'stars', texto: 'Asistente IA', permiso: 'ia.usar', modulo: 'ia' },
   { titulo: 'Seguimiento' },
-  { ruta: '/alimentacion', icono: 'cup-hot', texto: 'Alimentación', permiso: 'alimentacion.ver', modulo: 'nutricion' },
+  { ruta: '/nutricion', icono: 'egg-fried', texto: 'Nutrición', permiso: 'alimentacion.ver', modulo: 'nutricion' },
+  { ruta: '/alimentacion', icono: 'cup-hot', texto: 'Alimentación diaria', permiso: 'alimentacion.ver', modulo: 'nutricion' },
+  { ruta: '/comercial', icono: 'cash-stack', texto: 'Matrículas y pagos', permiso: 'comercial.ver', modulo: 'comercial' },
+  { ruta: '/comunicados', icono: 'megaphone', texto: 'Comunicados', permiso: 'comunicados.ver' },
   { ruta: '/reportes', icono: 'bar-chart-line', texto: 'Reportes', permiso: 'reportes.ver' },
   { titulo: 'Mi academia' },
+  { ruta: '/estructura', icono: 'diagram-3', texto: 'Estructura deportiva', permiso: 'estructura.ver' },
+  { ruta: '/metodologia', icono: 'sliders', texto: 'Metodología', permiso: 'metodologia.ver' },
   { ruta: '/admin', icono: 'person-badge', texto: 'Usuarios', permiso: 'usuarios.gestionar' },
   { ruta: '/academia', icono: 'building-gear', texto: 'Configuración', permiso: 'academia.configurar' },
   { ruta: '/permisos', icono: 'shield-check', texto: 'Permisos', permiso: 'permisos.configurar' },
+  { ruta: '/integraciones', icono: 'plug', texto: 'Integraciones', permiso: 'integraciones.gestionar', modulo: 'integraciones' },
   { ruta: '/auditoria', icono: 'journal-text', texto: 'Auditoría', permiso: 'auditoria.ver' },
   { titulo: 'Plataforma' },
   { ruta: '/plataforma', icono: 'buildings', texto: 'Academias', superAdmin: true },
@@ -87,7 +112,29 @@ const RUTAS = [
   { patron: /^\/auditoria$/, vista: auditoria.render, permiso: 'auditoria.ver' },
   { patron: /^\/plataforma$/, vista: plataforma.render, superAdmin: true },
   { patron: /^\/cuenta$/, vista: cuenta.render },
+  { patron: /^\/estructura$/, vista: estructura.render, permiso: 'estructura.ver' },
+  { patron: /^\/metodologia$/, vista: metodologia.render, permiso: 'metodologia.ver' },
+  { patron: /^\/medicion$/, vista: medicion.render, permiso: 'resultados.ver' },
+  { patron: /^\/medicion\/cronometro$/, vista: medicion.cronometro, permiso: 'medicion.usar' },
+  { patron: /^\/medicion\/(\d+)$/, vista: medicion.sesion, permiso: 'resultados.ver' },
+  { patron: /^\/rendimiento$/, vista: rendimiento.render, permiso: 'rendimiento.ver' },
+  { patron: /^\/entrenamientos$/, vista: entrenamiento.render, permiso: 'entrenamientos.ver' },
+  { patron: /^\/entrenamientos\/(\d+)$/, vista: entrenamiento.detalle, permiso: 'entrenamientos.ver' },
+  { patron: /^\/asistencia$/, vista: entrenamiento.asistenciaVista, permiso: 'asistencia.ver' },
+  { patron: /^\/recuperacion$/, vista: entrenamiento.recuperacionVista, permiso: 'recuperacion.ver' },
+  { patron: /^\/objetivos$/, vista: entrenamiento.objetivosVista, permiso: 'objetivos.ver' },
+  { patron: /^\/alertas$/, vista: inteligencia.alertas, permiso: 'alertas.ver' },
+  { patron: /^\/analisis$/, vista: inteligencia.analisis, permiso: 'ia.analizar', modulo: 'ia_analisis' },
+  { patron: /^\/videos$/, vista: videos.render, permiso: 'videos.ver', modulo: 'video' },
+  { patron: /^\/videos\/comparar$/, vista: videos.comparar, permiso: 'videos.ver', modulo: 'video' },
+  { patron: /^\/nutricion$/, vista: nutricion.render, permiso: 'alimentacion.ver', modulo: 'nutricion' },
+  { patron: /^\/comercial$/, vista: comercial.render, permiso: 'comercial.ver', modulo: 'comercial' },
+  { patron: /^\/comunicados$/, vista: comercial.comunicados, permiso: 'comunicados.ver' },
+  { patron: /^\/integraciones$/, vista: integraciones.render, permiso: 'integraciones.gestionar', modulo: 'integraciones' },
 ];
+
+// Las capturas guardadas sin conexión en el Modo Medición se envían al abrir la app
+window.addEventListener('load', () => { if (navigator.onLine) medicion.sincronizar({ silencioso: true }).catch(() => {}); });
 
 const permitido = (item) => (!item.permiso || puede(item.permiso))
   && (!item.modulo || moduloActivo(item.modulo))
@@ -172,6 +219,11 @@ function montarEstructura() {
               <select class="form-select form-select-sm" id="selector-coach" aria-label="Coach cuyos datos estás viendo">
                 <option value="">Toda la academia</option>
               </select></label>` : ''}
+            ${aca ? html`<div class="dropdown">
+              <button class="boton-icono position-relative" id="boton-notificaciones" data-bs-toggle="dropdown" data-bs-auto-close="outside" title="Notificaciones" aria-label="Notificaciones">
+                <i class="bi bi-bell"></i><span class="badge rounded-pill text-bg-danger position-absolute top-0 start-100 translate-middle d-none" id="insignia-notificaciones"></span></button>
+              <div class="dropdown-menu dropdown-menu-end p-0 panel-notificaciones" id="panel-notificaciones"><div class="p-3 small text-muted">Cargando…</div></div>
+            </div>` : ''}
             <button class="boton-icono" id="boton-tema" title="Cambiar tema" aria-label="Cambiar tema"><i class="bi bi-${iconoTema()}"></i></button>
             <div class="dropdown">
               <button class="btn d-flex align-items-center gap-2 px-1" data-bs-toggle="dropdown" aria-label="Menú de usuario">
@@ -215,6 +267,35 @@ function montarEstructura() {
   const buscador = document.getElementById('buscador');
   if (buscador) activarBuscador(buscador);
   if (esAdmin()) activarSelectorCoach();
+  if (aca) activarNotificaciones();
+}
+
+// ---------------------------------------------------------------------------
+// Notificaciones (alertas que le llegan a este usuario)
+// ---------------------------------------------------------------------------
+let temporizadorNotificaciones = null;
+async function cargarNotificaciones() {
+  const insignia = document.getElementById('insignia-notificaciones');
+  const panel = document.getElementById('panel-notificaciones');
+  if (!insignia || !panel) return;
+  const n = await api.get('/notificaciones');
+  insignia.textContent = n.sin_leer > 99 ? '99+' : n.sin_leer;
+  insignia.classList.toggle('d-none', !n.sin_leer);
+  montar(panel, html`<div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+      <span class="fw-semibold small">Notificaciones</span>${n.sin_leer ? html`<button class="btn btn-link btn-sm p-0" data-leer-todas>Marcar como leídas</button>` : ''}</div>
+    <div style="max-height:60vh;overflow:auto">${n.lista.length ? n.lista.map((x) => html`<a class="dropdown-item small py-2 ${x.leida ? 'text-muted' : 'fw-semibold'}" style="white-space:normal" href="${x.enlace || '#/alertas'}">
+      ${x.titulo}<div class="fw-normal text-muted">${x.cuerpo || ''}</div></a>`) : html`<div class="p-3 small text-muted">Sin notificaciones.</div>`}</div>`);
+  panel.querySelector('[data-leer-todas]')?.addEventListener('click', async () => {
+    await api.post('/notificaciones/leidas', {}).catch(() => {});
+    cargarNotificaciones().catch(() => {});
+  });
+}
+function activarNotificaciones() {
+  cargarNotificaciones().catch(() => {});
+  clearInterval(temporizadorNotificaciones);
+  temporizadorNotificaciones = setInterval(() => {
+    if (document.visibilityState === 'visible' && document.getElementById('insignia-notificaciones')) cargarNotificaciones().catch(() => {});
+  }, 60000);
 }
 
 function cambiarUsuario(nuevo) {
