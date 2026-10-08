@@ -44,6 +44,7 @@ import * as videos from './views/videos.js';
 import * as nutricion from './views/nutricion.js';
 import * as comercial from './views/comercial.js';
 import * as integraciones from './views/integraciones.js';
+import * as indicadores from './views/indicadores.js';
 
 /**
  * Cada opción declara qué necesita para verse: un permiso, un módulo activo o ser super admin.
@@ -58,12 +59,14 @@ const MENU = [
   { ruta: '/asistencia', icono: 'person-check', texto: 'Asistencia', permiso: 'asistencia.ver' },
   { ruta: '/recuperacion', icono: 'heart-pulse', texto: 'Recuperación', permiso: 'recuperacion.ver' },
   { ruta: '/objetivos', icono: 'bullseye', texto: 'Objetivos', permiso: 'objetivos.ver' },
+  { ruta: '/lesiones', icono: 'bandaid', texto: 'Lesiones', permiso: 'lesiones.ver' },
   { ruta: '/evaluaciones', icono: 'clipboard2-pulse', texto: 'Evaluación por observación', permiso: 'evaluaciones.ver' },
   { ruta: '/importar', icono: 'cloud-arrow-up', texto: 'Importar Excel', permiso: 'importacion.usar' },
   { titulo: 'Mi progreso' },
   { ruta: '/portal', icono: 'graph-up-arrow', texto: 'Mi progreso', permiso: 'portal.ver' },
   { titulo: 'Rendimiento e inteligencia' },
   { ruta: '/rendimiento', icono: 'graph-up-arrow', texto: 'Rendimiento', permiso: 'rendimiento.ver' },
+  { ruta: '/indicadores', icono: 'clipboard-data', texto: 'Indicadores', permiso: 'indicadores.ver' },
   { ruta: '/alertas', icono: 'bell', texto: 'Alertas', permiso: 'alertas.ver' },
   { ruta: '/analisis', icono: 'stars', texto: 'Análisis IA', permiso: 'ia.analizar', modulo: 'ia_analisis' },
   { ruta: '/videos', icono: 'camera-video', texto: 'Videos', permiso: 'videos.ver', modulo: 'video' },
@@ -86,6 +89,7 @@ const MENU = [
   { titulo: 'Plataforma' },
   { ruta: '/plataforma', icono: 'buildings', texto: 'Academias', superAdmin: true },
   { titulo: 'Cuenta' },
+  { ruta: '/encuestas', icono: 'ui-checks', texto: 'Evalúa la plataforma', academia: true },
   { ruta: '/cuenta', icono: 'person-gear', texto: 'Mi cuenta' },
 ];
 
@@ -131,6 +135,9 @@ const RUTAS = [
   { patron: /^\/comercial$/, vista: comercial.render, permiso: 'comercial.ver', modulo: 'comercial' },
   { patron: /^\/comunicados$/, vista: comercial.comunicados, permiso: 'comunicados.ver' },
   { patron: /^\/integraciones$/, vista: integraciones.render, permiso: 'integraciones.gestionar', modulo: 'integraciones' },
+  { patron: /^\/indicadores$/, vista: indicadores.render, permiso: 'indicadores.ver' },
+  { patron: /^\/lesiones$/, vista: indicadores.lesionesVista, permiso: 'lesiones.ver' },
+  { patron: /^\/encuestas$/, vista: indicadores.encuestasVista, academia: true },
 ];
 
 // Las capturas guardadas sin conexión en el Modo Medición se envían al abrir la app
@@ -138,7 +145,8 @@ window.addEventListener('load', () => { if (navigator.onLine) medicion.sincroniz
 
 const permitido = (item) => (!item.permiso || puede(item.permiso))
   && (!item.modulo || moduloActivo(item.modulo))
-  && (!item.superAdmin || esSuperAdmin());
+  && (!item.superAdmin || esSuperAdmin())
+  && (!item.academia || Boolean(academiaActual()));
 
 const app = document.getElementById('app');
 let usuario = null;

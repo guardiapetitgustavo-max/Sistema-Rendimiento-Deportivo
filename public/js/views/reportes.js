@@ -4,6 +4,7 @@ import {
   html, montar, encabezado, opcionesDeportistas, vacio, avisar, mostrarError, conCarga,
 } from '../ui.js';
 import { lineas } from '../graficos.js';
+import { pedirValoracion } from './indicadores.js';
 
 const PESTANAS = [
   { tipo: 'general', texto: 'General', icono: 'table' },
@@ -63,11 +64,12 @@ export async function render(vista) {
   }
 
   vista.querySelectorAll('[data-descargar]').forEach((b) => b.addEventListener('click', () =>
-    conCarga(b, () => api.descargar(b.dataset.descargar)).catch(mostrarError)));
+    conCarga(b, () => api.descargar(b.dataset.descargar)).then((r) => pedirValoracion(r?.reporteId)).catch(mostrarError)));
 
   vista.querySelectorAll('[data-individual-formato]').forEach((b) => b.addEventListener('click', () => {
     const id = vista.querySelector('[data-individual]').value;
     if (!id) return avisar('Selecciona un deportista', 'warning');
-    return conCarga(b, () => api.descargar(`/reportes/individual/${b.dataset.individualFormato}?deportista_id=${id}`)).catch(mostrarError);
+    return conCarga(b, () => api.descargar(`/reportes/individual/${b.dataset.individualFormato}?deportista_id=${id}`))
+      .then((r) => pedirValoracion(r?.reporteId)).catch(mostrarError);
   }));
 }

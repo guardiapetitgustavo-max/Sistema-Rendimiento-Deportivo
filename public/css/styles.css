@@ -1462,3 +1462,55 @@ a {
   [data-registrar] input[name="valor"] { flex: 1 1 auto; width: auto !important; }
   .cronometro .btn-lg { padding: .6rem .9rem; }
 }
+
+/* ---------------- Indicadores (FASE 11) ---------------- */
+.tarjeta-indicador {
+  border: 1px solid var(--borde);
+  border-left: 4px solid var(--texto-suave);
+  background: var(--superficie);
+  color: var(--texto);
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.tarjeta-indicador:hover,
+.tarjeta-indicador:focus-visible {
+  box-shadow: var(--sombra-alta);
+  transform: translateY(-2px);
+}
+.tarjeta-indicador.estado-cumple { border-left-color: var(--exito); }
+.tarjeta-indicador.estado-no_cumple { border-left-color: var(--peligro); }
+.tarjeta-indicador.estado-sin_datos { border-left-color: var(--texto-suave); }
+
+.icono-indicador {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--primario);
+  background: rgba(var(--bs-primary-rgb), 0.12);
+}
+
+.pregunta-likert {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--borde);
+}
+.escala-likert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.escala-likert .extremo {
+  font-size: 0.75rem;
+  color: var(--texto-suave);
+  flex: 0 1 auto;
+}
+.escala-likert .opcion-likert .btn {
+  min-width: 2.5rem;
+}
+@media (max-width: 575.98px) {
+  .escala-likert .extremo { flex-basis: 100%; }
+  .escala-likert .extremo:last-child { text-align: right; }
+}

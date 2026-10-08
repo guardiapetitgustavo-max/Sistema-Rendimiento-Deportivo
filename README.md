@@ -5,8 +5,8 @@ celular (también sin conexión), Modo Piscina, cronómetro con dos teléfonos, 
 objetivos, evolución y récords, scoring versionado, alertas, análisis IA trazable, video, nutrición, matrículas y
 pagos, planes SaaS e integraciones con fotocélulas/GPS.
 
-> **Arquitectura:** [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) · **Validación:** [`docs/VALIDACION.md`](docs/VALIDACION.md)
-> Estado: **las 10 fases implementadas** (versión 4.0.0) y validadas con 82 pruebas automáticas.
+> **Arquitectura:** [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) · **Validación:** [`docs/VALIDACION.md`](docs/VALIDACION.md) · **Indicadores:** [`docs/INDICADORES.md`](docs/INDICADORES.md)
+> Estado: **11 fases implementadas** (versión 4.1.0) y validadas con 123 pruebas automáticas.
 
 **Stack:** Node.js + Express (API) · PostgreSQL en Supabase · Frontend HTML/JS con Bootstrap, Chart.js y three.js (3D) · Despliegue en Vercel.
 
@@ -52,7 +52,10 @@ tarjetas con inclinación 3D, animaciones de entrada, buscador global, paginaci�
 | **Nutrición** | Perfil, horarios, orientación general de hidratación y notas del rol **profesional** (no clínico). |
 | **Comercial** | Matrículas, cuotas mensuales, cobros y vencimientos; comunicados por rol o equipo; planes SaaS con límites y módulos. |
 | **Integraciones** | Dispositivos con clave de API (fotocélulas, GPS, wearables, cronometraje); el GPS calcula distancia, ritmo y FC. |
-| **Academia demo** | "Sport Academy Demo" con 36 deportistas y 4 meses de datos, creada con un clic desde la Plataforma. |
+| **Indicadores** | Panel con la matriz de evaluación: rastreo GPS, usabilidad (SUS), efectividad de los reportes, incidencia de lesiones por 1000 h, carga y recuperación (ACWR, monotonía, bienestar) y aceptación (TAM), con metas, IC 95 %, alfa de Cronbach y exportación a Excel. |
+| **Lesiones** | Registro de lesiones con días de baja, gravedad y recaídas; alerta automática de pico de carga (ACWR). |
+| **Evalúa la plataforma** | Cuestionarios SUS y TAM para todas las cuentas y valoración rápida de cada reporte descargado. |
+| **Academia demo** | "Sport Academy Demo" con 36 deportistas y 6 meses de datos (incluye lesiones, carreras con GPS y respuestas a los cuestionarios), creada con un clic desde la Plataforma. |
 
 ---
 

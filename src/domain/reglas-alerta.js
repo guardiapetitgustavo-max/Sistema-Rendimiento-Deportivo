@@ -57,6 +57,12 @@ const REGLAS = {
     parametros: { porcentaje: 25 },
     prioridad: 'media',
   },
+  carga_acwr: {
+    nombre: 'Pico de carga (ACWR)',
+    descripcion: 'La carga de los últimos 7 días supera la carga habitual de las últimas 4 semanas (ACWR) por encima del umbral. Requiere 28 días de historial.',
+    parametros: { umbral: 1.5 },
+    prioridad: 'alta',
+  },
   objetivo_vencido: {
     nombre: 'Objetivo vencido',
     descripcion: 'Un objetivo activo pasó su fecha límite sin alcanzarse.',

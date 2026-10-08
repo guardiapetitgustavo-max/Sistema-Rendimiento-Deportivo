@@ -6,6 +6,8 @@
 const { query } = require('../../db/pool');
 const { REGLAS } = require('../../domain/reglas-alerta');
 const M = require('../../domain/medicion');
+const I = require('../../domain/indicadores');
+const { hoyISO } = require('../../utils/valores');
 
 /** Reglas efectivas de una academia: catálogo + parámetros guardados. */
 async function reglasDe(academia) {
@@ -30,7 +32,7 @@ const fmt = (r, v) => M.formatearValor(v, { tipo: r.tipo_resultado, unidad: r.un
 async function candidatas(academia, reglas, deportistaId = null) {
   const filtroDep = deportistaId ? 'AND d.id = $2' : '';
   const params = deportistaId ? [academia, deportistaId] : [academia];
-  const [deps, res, asis, recu, objs] = await Promise.all([
+  const [deps, res, asis, recu, objs, cargas, primeras] = await Promise.all([
     query(`SELECT d.id, d.nombre, d.usuario_id FROM deportistas d WHERE d.academia_id = $1 AND d.activo ${filtroDep}`, params),
     query(`SELECT r.id, r.deportista_id, r.prueba_id, r.valor, r.unidad, r.datos, to_char(r.fecha, 'YYYY-MM-DD') AS fecha, p.nombre AS prueba, p.criterio,
              m.direccion_mejora, m.tipo_resultado, m.decimales, m.rango_min, m.rango_max
@@ -44,7 +46,15 @@ async function candidatas(academia, reglas, deportistaId = null) {
     query(`SELECT o.id, o.deportista_id, o.descripcion, to_char(o.fecha_limite, 'YYYY-MM-DD') AS fecha_limite FROM objetivos o
            LEFT JOIN deportistas d ON d.id = o.deportista_id
            WHERE o.academia_id = $1 AND o.estado IN ('activo', 'vencido') AND o.fecha_limite < CURRENT_DATE ${deportistaId ? 'AND o.deportista_id = $2' : ''}`, params),
+    // Carga sRPE de los últimos 28 días y fecha de la primera carga (para el ACWR)
+    query(`SELECT a.deportista_id, to_char(a.fecha, 'YYYY-MM-DD') AS fecha, a.rpe_sesion * coalesce(a.minutos, s.duracion_min) AS carga
+           FROM asistencia a JOIN deportistas d ON d.id = a.deportista_id LEFT JOIN sesiones_entrenamiento s ON s.id = a.sesion_id
+           WHERE a.academia_id = $1 AND d.activo AND a.estado IN ('presente', 'tardanza') AND a.rpe_sesion IS NOT NULL
+             AND coalesce(a.minutos, s.duracion_min) > 0 AND a.fecha >= CURRENT_DATE - 30 ${filtroDep}`, params),
+    query(`SELECT a.deportista_id, to_char(min(a.fecha), 'YYYY-MM-DD') AS primera FROM asistencia a JOIN deportistas d ON d.id = a.deportista_id
+           WHERE a.academia_id = $1 AND a.rpe_sesion IS NOT NULL AND a.estado IN ('presente', 'tardanza') ${filtroDep} GROUP BY a.deportista_id`, params),
   ]);
+  const hoy = hoyISO();
   const alertas = [];
   const agregar = (tipo, dep, titulo, motivo, datos, clave) => {
     const regla = reglas[tipo];
@@ -160,6 +170,20 @@ async function candidatas(academia, reglas, deportistaId = null) {
           { media_horas: mediaS, registros: conSueno.length, minimo: ps.horas }, `sueno:${dep.id}:${conSueno.at(-1).fecha}`);
       }
     }
+    // --- Carga: pico agudo respecto a la carga crónica (ACWR)
+    const umbralAcwr = Number(reglas.carga_acwr.parametros.umbral) || 1.5;
+    const propiasCargas = cargas.rows.filter((c) => c.deportista_id === dep.id).map((c) => ({ fecha: c.fecha, carga: Number(c.carga) }));
+    if (propiasCargas.length) {
+      const primera = primeras.rows.find((x) => x.deportista_id === dep.id)?.primera || null;
+      const a = I.acwr(propiasCargas, hoy, { primera });
+      if (a.acwr !== null && a.acwr > umbralAcwr) {
+        const semana = I.sumarDias(hoy, -((new Date(`${hoy}T00:00:00Z`).getUTCDay() + 6) % 7));
+        agregar('carga_acwr', dep, 'Pico de carga de entrenamiento',
+          `ACWR de ${a.acwr} (carga de 7 días ${a.aguda} UA frente a una media semanal de ${a.cronica} UA en 4 semanas; umbral ${umbralAcwr}). Valorar reducir la carga: los picos se asocian a más riesgo de lesión.`,
+          { acwr: a.acwr, aguda: a.aguda, cronica: a.cronica, umbral: umbralAcwr, fecha: hoy }, `acwr:${dep.id}:${semana}`);
+      }
+    }
+
     const umbralDolor = Number(reglas.dolor_reportado.parametros.intensidad) || 6;
     for (const r of rec.filter((x) => x.dolor && (x.dolor_intensidad ?? 0) >= umbralDolor && x.fecha >= dias(7))) {
       agregar('dolor_reportado', dep, 'Dolor reportado',

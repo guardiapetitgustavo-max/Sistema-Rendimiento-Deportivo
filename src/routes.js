@@ -75,6 +75,13 @@ router.use('/nutricion', modulo('nutricion'), permiso('alimentacion.ver'), requi
 router.use('/comercial', modulo('comercial'), permiso('comercial.ver'), require('./modules/comercial/comercial.routes'));
 router.use('/integraciones', modulo('integraciones'), permiso('integraciones.gestionar'), require('./modules/integraciones/integraciones.routes').gestion);
 
+// Fase 11: indicadores de evaluación (carga, lesiones, rastreo, usabilidad, reportes y aceptación)
+const rutasIndicadores = require('./modules/indicadores/indicadores.routes');
+
+router.use('/indicadores', permiso('indicadores.ver'), rutasIndicadores.indicadores);
+router.use('/lesiones', leerOGestionar('lesiones.ver', 'lesiones.gestionar'), rutasIndicadores.lesiones);
+router.use('/encuestas', rutasIndicadores.encuestas);
+
 // Comunicados: los ve cada rol según su destino; publicar exige comunicados.publicar
 router.get('/comunicados', permiso('comunicados.ver'), async (req, res) =>
   res.json(await comercial.listarComunicados(req.usuario, { todos: req.usuario.permisos.includes('comunicados.publicar') })));

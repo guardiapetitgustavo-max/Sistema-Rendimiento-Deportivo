@@ -9,6 +9,7 @@ const { HttpError, noEncontrado } = require('../../utils/http-error');
 const { validar } = require('../../utils/validar');
 const medicion = require('../medicion/medicion.service');
 const M = require('../../domain/medicion');
+const I = require('../../domain/indicadores');
 
 const TIPOS = ['fotocelula', 'gps', 'wearable', 'cronometraje', 'pulsometro', 'otro'];
 const hash = (clave) => crypto.createHash('sha256').update(clave).digest('hex');
@@ -76,10 +77,15 @@ async function recibirMedicion(disp, cuerpo = {}) {
   let { valor } = cuerpo;
   if (Array.isArray(cuerpo.gps) && cuerpo.gps.length) {
     if (cuerpo.gps.length > 20000) throw new HttpError(400, 'Trayectoria GPS demasiado larga');
+    const prueba = await medicion.cargarPrueba(academia, pruebaId);
+    const inicio = process.hrtime.bigint();
     const resumen = M.resumenGps(cuerpo.gps);
     if (!resumen) throw new HttpError(400, 'La trayectoria GPS no tiene puntos válidos');
-    datos.gps = resumen;
-    const prueba = await medicion.cargarPrueba(academia, pruebaId);
+    // Indicador "rendimiento del rastreo de movimiento": calidad de la trayectoria y tiempo de procesamiento
+    const referencia = Number(cuerpo.distancia_referencia_m) > 0 ? Number(cuerpo.distancia_referencia_m) : (prueba.distancia_m || null);
+    const calidad = I.calidadGps(cuerpo.gps, { distanciaReferencia: referencia });
+    if (calidad) calidad.procesamiento_ms = Number((process.hrtime.bigint() - inicio) / 1000n) / 1000;
+    datos.gps = { ...resumen, calidad };
     if (valor === undefined || valor === null) {
       if (prueba.tipo_resultado === 'DISTANCE') valor = prueba.unidad === 'km' ? resumen.distancia_m / 1000 : resumen.distancia_m;
       else if (prueba.tipo_resultado === 'TIME') valor = resumen.duracion_s;

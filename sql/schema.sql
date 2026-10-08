@@ -943,6 +943,64 @@ CREATE TABLE IF NOT EXISTS comunicados (
   activo        BOOLEAN NOT NULL DEFAULT true
 );
 
+-- =============================================================================
+-- FASE 11: Indicadores de evaluación (lesiones, encuestas SUS/TAM y uso de reportes)
+-- La carga (ACWR, monotonía) y la calidad del GPS se calculan con los datos existentes.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS lesiones (
+  id             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  academia_id    INTEGER NOT NULL REFERENCES academias(id) ON DELETE CASCADE,
+  deportista_id  INTEGER NOT NULL REFERENCES deportistas(id) ON DELETE CASCADE,
+  fecha_inicio   DATE    NOT NULL,
+  fecha_alta     DATE    CHECK (fecha_alta IS NULL OR fecha_alta >= fecha_inicio),   -- null = sigue lesionado
+  zona           TEXT    NOT NULL,
+  tipo           TEXT    NOT NULL DEFAULT 'otra'
+                 CHECK (tipo IN ('muscular', 'ligamentosa', 'tendinosa', 'osea', 'articular', 'contusion', 'otra')),
+  mecanismo      TEXT    CHECK (mecanismo IN ('contacto', 'sin_contacto', 'sobreuso')),
+  contexto       TEXT    NOT NULL DEFAULT 'entrenamiento' CHECK (contexto IN ('entrenamiento', 'competencia', 'otro')),
+  recurrente     BOOLEAN NOT NULL DEFAULT false,
+  descripcion    TEXT,
+  registrado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  activo         BOOLEAN NOT NULL DEFAULT true,
+  creado_en      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Respuestas a los cuestionarios SUS (usabilidad) y TAM (aceptación). Se conserva cada envío.
+CREATE TABLE IF NOT EXISTS encuestas (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  academia_id INTEGER NOT NULL REFERENCES academias(id) ON DELETE CASCADE,
+  usuario_id  INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  instrumento TEXT    NOT NULL CHECK (instrumento IN ('SUS', 'TAM')),
+  rol         TEXT,
+  respuestas  JSONB   NOT NULL,
+  puntaje     DOUBLE PRECISION NOT NULL CHECK (puntaje BETWEEN 0 AND 100),
+  detalle     JSONB   NOT NULL DEFAULT '{}'::jsonb,
+  comentario  TEXT,
+  creado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Cada reporte generado (con éxito o con error) y la valoración opcional de quien lo descargó
+CREATE TABLE IF NOT EXISTS reportes_uso (
+  id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  academia_id    INTEGER NOT NULL REFERENCES academias(id) ON DELETE CASCADE,
+  usuario_id     INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  tipo           TEXT    NOT NULL,
+  formato        TEXT    NOT NULL,
+  exito          BOOLEAN NOT NULL,
+  duracion_ms    INTEGER,
+  error          TEXT,
+  utilidad       INTEGER CHECK (utilidad BETWEEN 1 AND 5),
+  apoyo_decision BOOLEAN,
+  comentario     TEXT,
+  valorado_en    TIMESTAMPTZ,
+  creado_en      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lesiones_academia     ON lesiones (academia_id, fecha_inicio DESC) WHERE activo;
+CREATE INDEX IF NOT EXISTS idx_lesiones_dep          ON lesiones (deportista_id, fecha_inicio DESC) WHERE activo;
+CREATE INDEX IF NOT EXISTS idx_encuestas_academia    ON encuestas (academia_id, instrumento, creado_en DESC);
+CREATE INDEX IF NOT EXISTS idx_reportes_uso_academia ON reportes_uso (academia_id, creado_en DESC);
+
 -- -----------------------------------------------------------------------------
 -- Índices de las fases 2-10
 -- -----------------------------------------------------------------------------

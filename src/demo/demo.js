@@ -16,6 +16,7 @@ const { redondear, parsearTiempo } = require('../domain/medicion');
 const estructura = require('../modules/estructura/estructura.service');
 const motor = require('../modules/inteligencia/motor-alertas');
 const rendimiento = require('../modules/rendimiento/rendimiento.service');
+const I = require('../domain/indicadores');
 
 const SLUG = 'sport-academy-demo';
 const DOMINIO = '@demo.sportacademy.test';
@@ -107,6 +108,112 @@ async function insertarLote(tabla, filas, columnas, _tipos, retorno = '') {
 async function borrarDemo() {
   await query('DELETE FROM academias WHERE slug = $1', [SLUG]);
   await query('DELETE FROM usuarios WHERE correo LIKE $1 AND NOT es_super_admin', [`%${DOMINIO}`]);
+}
+
+/**
+ * Datos de los indicadores de evaluación: lesiones en los dos últimos trimestres (menos en el actual), carreras de 400 m
+ * registradas con GPS por la API de integraciones (algunas con mala señal), respuestas a los cuestionarios SUS y TAM
+ * de las cuentas de la demo y reportes generados con su valoración.
+ */
+async function datosIndicadores({ academia, usuarios, atletas, resultados, prueba }) {
+  const porDep = (dep) => atletas.filter((a) => a.dep === dep);
+  const [fut, nat, atl] = [porDep('futbol'), porDep('natacion'), porDep('atletismo')];
+  // [días atrás, deportista, zona, tipo, mecanismo, contexto, días de baja (null = sigue lesionado)]
+  const casos = [
+    [160, fut[1], 'Isquiotibial izquierdo', 'muscular', 'sin_contacto', 'entrenamiento', 12],
+    [141, fut[4], 'Tobillo derecho', 'ligamentosa', 'contacto', 'competencia', 21],
+    [128, fut[7], 'Rodilla izquierda', 'ligamentosa', 'contacto', 'competencia', 35],
+    [116, nat[2], 'Hombro derecho', 'tendinosa', 'sobreuso', 'entrenamiento', 9],
+    [104, atl[3], 'Gemelo derecho', 'muscular', 'sin_contacto', 'entrenamiento', 6],
+    [96, fut[9], 'Muñeca izquierda', 'contusion', 'contacto', 'entrenamiento', 3],
+    [61, fut[2], 'Tobillo izquierdo', 'ligamentosa', 'contacto', 'competencia', 14],
+    [26, atl[6], 'Aductor', 'muscular', 'sin_contacto', 'entrenamiento', 10],
+  ];
+  const conFatiga = atletas.find((a) => a.fatiga);
+  if (conFatiga) casos.push([1, conFatiga, 'Isquiotibial derecho', 'muscular', 'sin_contacto', 'entrenamiento', null]);
+  await insertarLote('lesiones', casos.filter(([, a]) => a).map(([dias, a, zona, tipo, mecanismo, contexto, baja]) => ({
+    academia_id: academia, deportista_id: a.id, fecha_inicio: fecha(dias), fecha_alta: baja === null ? null : fecha(Math.max(0, dias - baja)),
+    zona, tipo, mecanismo, contexto, recurrente: zona.startsWith('Tobillo') && dias < 100, registrado_por: a.coach,
+    descripcion: baja === null ? 'Molestia tras el entrenamiento; en seguimiento' : null,
+  })), ['academia_id', 'deportista_id', 'fecha_inicio', 'fecha_alta', 'zona', 'tipo', 'mecanismo', 'contexto', 'recurrente', 'registrado_por', 'descripcion']);
+
+  // Carreras de 400 m con reloj GPS (1 Hz) en una pista de 400 m, enviadas por la API de integraciones
+  const integraciones = require('../modules/integraciones/integraciones.service');
+  const { rows: [disp] } = await query(
+    `INSERT INTO dispositivos (academia_id, nombre, tipo, clave_hash, prefijo, creado_por) VALUES ($1, 'Relojes GPS de pista (demo)', 'gps', $2, 'sk_dev_demo', $3)
+     RETURNING id, academia_id, tipo`,
+    [academia, require('node:crypto').randomBytes(32).toString('hex'), usuarios.admin],
+  );
+  const p400 = prueba.atl_400m;
+  const centro = { lat: -12.0675, lon: -77.0336 }; // pista de atletismo en Lima (aprox.)
+  const radio = 400 / (2 * Math.PI);
+  const mLat = 1 / 111320;
+  const mLon = 1 / (111320 * Math.cos((centro.lat * Math.PI) / 180));
+  let gps = 0;
+  for (const [k, a] of atl.entries()) {
+    const marcas = resultados.filter((r) => r.deportista_id === a.id && r.prueba_id === p400?.id && r.oficial).map((r) => r.valor);
+    const base = marcas.length ? marcas.at(-1) : 70;
+    for (const [j, dias] of [45, 24, 6].entries()) {
+      const duracion = Math.round(base * (1 + normal() * 0.015));
+      const malaSenal = (k + j) % 7 === 3; // bajo árboles / tribuna: más ruido, huecos y un salto
+      const inicio = Date.parse(`${fecha(dias)}T15:30:00Z`);
+      const puntos = [];
+      for (let t = 0; t <= duracion; t += 1) {
+        const ang = (2 * Math.PI * t) / duracion;
+        const ruido = malaSenal ? 3 : 0.5;
+        let lat = centro.lat + (radio * Math.sin(ang) + normal() * ruido) * mLat;
+        const lon = centro.lon + (radio * Math.cos(ang) + normal() * ruido) * mLon;
+        if (malaSenal && t === Math.floor(duracion / 2)) lat += 80 * mLat; // salto imposible
+        const perdido = malaSenal ? rnd() < 0.08 : rnd() < 0.005;
+        puntos.push(perdido ? { lat: null, lon: null, t: inicio + t * 1000 } : { lat, lon, t: inicio + t * 1000, acc: redondear((malaSenal ? 8 : 3) + rnd() * 2, 1) });
+      }
+      await integraciones.recibirMedicion(disp, {
+        deportista_id: a.id, prueba_id: p400.id, fecha: fecha(dias), gps: puntos, clave_idempotencia: `demo-gps-${a.id}-${dias}`,
+        notas: 'Registrado con reloj GPS (demo)',
+      });
+      gps += 1;
+    }
+  }
+
+  // Cuestionarios: cada cuenta de la demo responde SUS y TAM (algunas dos veces; cuenta la última)
+  const perfiles = [
+    ['admin', 'admin', 0.9], ['coach.futbol', 'coach', 0.8], ['coach.natacion', 'coach', 0.7], ['coach.atletismo', 'coach', 0.85],
+    ['nutricion', 'profesional', 0.6], ['deportista', 'deportista', 0.75], ['padre', 'padre', 0.5],
+  ];
+  const likert = (afinidad, max, invertido) => {
+    const v = Math.round(1 + (max - 1) * Math.min(1, Math.max(0, afinidad + normal() * 0.12)));
+    return invertido ? max + 1 - v : v;
+  };
+  const filasEnc = [];
+  const comentariosSus = { padre: 'Me costó encontrar los pagos al principio.', 'coach.natacion': 'El Modo Piscina es muy práctico; el menú es largo.' };
+  for (const [alias, rol, afinidad] of perfiles) {
+    const sus = Array.from({ length: 10 }, (_, i) => likert(afinidad, 5, i % 2 === 1));
+    const ps = I.puntajeSus(sus);
+    filasEnc.push({ academia_id: academia, usuario_id: usuarios[alias], instrumento: 'SUS', rol, respuestas: sus, puntaje: ps,
+      detalle: { interpretacion: I.interpretarSus(ps) }, comentario: comentariosSus[alias] || null, creado_en: `${fecha(20 + Math.floor(rnd() * 30))}T14:00:00Z` });
+    const tam = Array.from({ length: I.ITEMS_TAM.length }, () => likert(afinidad + 0.05, 7, false));
+    const pt = I.puntajeTam(tam);
+    filasEnc.push({ academia_id: academia, usuario_id: usuarios[alias], instrumento: 'TAM', rol, respuestas: tam, puntaje: pt.puntaje,
+      detalle: { constructos: pt.constructos, nivel: I.nivelAceptacion(pt.puntaje) }, comentario: null, creado_en: `${fecha(10 + Math.floor(rnd() * 20))}T14:30:00Z` });
+  }
+  await insertarLote('encuestas', filasEnc, ['academia_id', 'usuario_id', 'instrumento', 'rol', 'respuestas', 'puntaje', 'detalle', 'comentario', 'creado_en']);
+
+  // Reportes generados en los últimos 4 meses (2 fallaron), la mayoría valorados
+  const tipos = ['general', 'ranking', 'evolucion', 'seguimiento', 'marcas', 'asistencia', 'alertas', 'individual'];
+  const quienes = ['admin', 'coach.futbol', 'coach.natacion', 'coach.atletismo'];
+  const usos = Array.from({ length: 48 }, (_, i) => {
+    const exito = i % 23 !== 7;
+    const valorado = exito && rnd() < 0.7;
+    const utilidad = valorado ? Math.min(5, Math.max(2, Math.round(4.1 + normal() * 0.7))) : null;
+    return {
+      academia_id: academia, usuario_id: usuarios[elegir(quienes)], tipo: elegir(tipos), formato: rnd() < 0.6 ? 'pdf' : 'excel', exito,
+      duracion_ms: Math.round(180 + rnd() * 900), error: exito ? null : 'Tiempo de espera agotado al generar el PDF',
+      utilidad, apoyo_decision: valorado ? rnd() < (utilidad >= 4 ? 0.8 : 0.3) : null, valorado_en: valorado ? new Date().toISOString() : null,
+      creado_en: `${fecha(Math.floor(rnd() * 120))}T${String(9 + Math.floor(rnd() * 9)).padStart(2, '0')}:00:00Z`,
+    };
+  });
+  await insertarLote('reportes_uso', usos, ['academia_id', 'usuario_id', 'tipo', 'formato', 'exito', 'duracion_ms', 'error', 'utilidad', 'apoyo_decision', 'valorado_en', 'creado_en']);
+  return { lesiones: casos.length, trayectorias_gps: gps, encuestas: filasEnc.length, reportes_generados: usos.length };
 }
 
 async function crearDemo({ superAdminId = null, reiniciar = true } = {}) {
@@ -299,7 +406,9 @@ async function crearDemo({ superAdminId = null, reiniciar = true } = {}) {
     const colsRes = Object.keys(tiposRes).concat(['unidad', 'fuente_medicion']);
     for (let i = 0; i < resultados.length; i += 1500) await insertarLote('resultados', resultados.slice(i, i + 1500), colsRes, tiposRes);
 
-    // 5. Entrenamientos (3 por semana y equipo, 8 semanas) con ejercicios, asistencia y sRPE
+    // 5. Entrenamientos (3 por semana y equipo, 26 semanas) con ejercicios, asistencia y sRPE.
+    //    El equipo de fútbol pasa de dos semanas suaves a preparar un torneo: se ve un pico de ACWR (alerta de carga).
+    const SEMANAS_ENTRENAMIENTO = 25;
     const ejerciciosDe = {
       futbol: [['Activación y movilidad', null, null, null, 12, 3], ['Rondos 4v2', 4, null, null, 4, 6], ['Sprints 20 m', 6, null, 20, null, 9], ['Fútbol reducido 7v7', 3, null, null, 8, 7]],
       natacion: [['Calentamiento libre', 1, null, 400, null, 3], ['Series 8×50 libre', 8, null, 50, null, 8], ['Técnica de patada', 4, null, 100, null, 5], ['Vuelta a la calma', 1, null, 200, null, 2]],
@@ -308,16 +417,22 @@ async function crearDemo({ superAdminId = null, reiniciar = true } = {}) {
     const sesEnt = [];
     for (const eq of Object.values(equipos)) {
       const plantilla = plantillasEnt.find((p) => p.deporte_id === deportes[eq.dep] && p.clave !== 'fuerza');
-      for (let semana = 8; semana >= 0; semana -= 1) {
+      // Lunes, miércoles y viernes "relativos": hace 5, 3 y 1 días en la semana actual; la semana -1 queda planificada
+      for (let semana = SEMANAS_ENTRENAMIENTO; semana >= -1; semana -= 1) {
         for (const desfase of [0, 2, 4]) {
-          const dias = semana * 7 + (4 - desfase);
-          if (dias < 0) continue;
+          const dias = semana * 7 + (5 - desfase);
           const realizada = dias >= 1;
+          // Fútbol: dos semanas de descanso activo y luego la preparación de un torneo (pico de carga)
+          const torneo = eq.dep === 'futbol' && dias >= 1 && dias <= 6;
+          const descanso = eq.dep === 'futbol' && dias >= 8 && dias <= 21;
+          const duracion = 75 + Math.round(rnd() * 3) * 15;
+          const intensidadBase = 4 + Math.round(rnd() * 4);
           sesEnt.push({
             academia_id: academia, deporte_id: deportes[eq.dep], equipo_id: eq.id, coach_id: coachDe[eq.dep], instalacion_id: instDe[eq.dep],
-            plantilla_id: plantilla?.id || null, fecha: fecha(dias), hora: '16:00', duracion_min: 75 + Math.round(rnd() * 3) * 15,
-            objetivo: elegir(['Velocidad y técnica', 'Resistencia aeróbica', 'Potencia', 'Técnica específica', 'Recuperación activa']),
-            intensidad: 4 + Math.round(rnd() * 4), estado: realizada ? 'realizada' : 'planificada', creado_por: coachDe[eq.dep], dep: eq.dep, equipo: eq.id, dias,
+            plantilla_id: plantilla?.id || null, fecha: fecha(dias), hora: '16:00', duracion_min: torneo ? 150 : descanso ? 60 : duracion,
+            objetivo: torneo ? 'Preparación de torneo' : descanso ? 'Descanso activo'
+              : elegir(['Velocidad y técnica', 'Resistencia aeróbica', 'Potencia', 'Técnica específica', 'Recuperación activa']),
+            intensidad: torneo ? 9 : descanso ? 3 : intensidadBase, estado: realizada ? 'realizada' : 'planificada', creado_por: coachDe[eq.dep], dep: eq.dep, equipo: eq.id, dias,
           });
         }
       }
@@ -452,6 +567,9 @@ async function crearDemo({ superAdminId = null, reiniciar = true } = {}) {
     await insertarLote('evaluaciones', evals, ['deportista_id', 'fecha', ...capsEval],
       { deportista_id: 'int', fecha: 'date', ...Object.fromEntries(capsEval.map((c) => [c, 'float8'])) });
 
+    // 10b. Indicadores (FASE 11): lesiones, rastreo GPS, encuestas SUS/TAM y uso de reportes
+    const indicadores = await datosIndicadores({ academia, usuarios, atletas, resultados, prueba });
+
     // 11. Motor de alertas y puntajes (con la versión de scoring vigente)
     const alertas = await motor.evaluar(academia);
     // Puntajes de cada fecha de evaluación (historial), calculados en memoria y guardados en lote
@@ -476,7 +594,7 @@ async function crearDemo({ superAdminId = null, reiniciar = true } = {}) {
     return {
       academia_id: academia, deportistas: atletas.length, coaches: 3, resultados: resultados.length, sesiones_evaluacion: sesiones.length,
       entrenamientos: sesEnt.length, asistencia: asistencia.length, recuperacion: recuperacion.length, objetivos: objetivos.length,
-      alertas: alertas.creadas, duracion_ms: Date.now() - inicio,
+      alertas: alertas.creadas, ...indicadores, duracion_ms: Date.now() - inicio,
       cuentas: Object.keys(usuarios).map((alias) => `${alias}${DOMINIO}`), clave: CLAVE_DEMO,
     };
   } catch (error) {

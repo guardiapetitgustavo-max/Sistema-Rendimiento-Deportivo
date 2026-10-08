@@ -121,5 +121,6 @@ export const api = {
     enlace.click();
     enlace.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
+    return { reporteId: respuesta.headers.get('X-Reporte-Id') };
   },
 };
